@@ -21,6 +21,7 @@ htmlcov/
 # Local model files and downloaded parser assets
 .models/
 models/
+./papers
 *.udpipe
 
 # Local output artifacts
