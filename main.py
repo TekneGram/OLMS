@@ -7,7 +7,14 @@ def main() -> None:
   )
 
   parsed = deprel.parse("trial", my_text)
-  print(parsed)
+  sentence_1_token = parsed.tokens_by_sentence[1]
+  print(sentence_1_token)
+  print("######")
+  needs = parsed.token_by_sentence_and_id[(1,11)]
+  print(needs)
+  print("######")
+  needs_children = parsed.children_by_sentence_and_head[(1,11)]
+  print(needs_children)
 
   return
 
