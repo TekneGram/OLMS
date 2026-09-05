@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from collections import defaultdict
 from typing import List
 from pathlib import Path
 import os
@@ -31,6 +32,27 @@ class DependencyParse:
   source_text: str
   conllu: str
   tokens: List[DependencyToken]
+
+  tokens_by_sentence: dict[int, list[DependencyToken]] = field(init=False)
+  token_by_sentence_and_id: dict[tuple[int, int], DependencyToken] = field(init=False)
+  children_by_sentence_and_head: dict[tuple[int, int], list[DependencyToken]] = field(init=False)
+
+  def __post_init__(self) -> None:
+    self.tokens_by_sentence = defaultdict(list)
+    self.token_by_sentence_and_id = {}
+    self.children_by_sentence_and_head = defaultdict(list)
+
+    for token in self.tokens:
+      self.tokens_by_sentence[token.sentence_id].append(token)
+
+      self.token_by_sentence_and_id[
+        (token.sentence_id, token.token_id)
+      ] = token
+
+      if token.head_token_id is not None:
+        self.children_by_sentence_and_head[
+          (token.sentence_id, token.head_token_id)
+        ].append(token)
 
 class DependencyParser:
   def __init__(
