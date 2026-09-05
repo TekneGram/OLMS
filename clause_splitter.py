@@ -15,6 +15,9 @@ class ClauseSplitter:
 
     return clauses
 
+  def clause_start_id(self, tokens: list[DependencyToken]) -> int:
+      return min(token.token_id for token in tokens)
+
   def split_sentence(
       self,
       sentence_tokens: list[DependencyToken],
@@ -51,6 +54,11 @@ class ClauseSplitter:
       split_clauses.append(
         self.collect_subtree(sentence_id, root.token_id)
       )
+
+    split_clauses = sorted(
+      split_clauses,
+      key=self.clause_start_id
+    )
 
     return [self.token_text(clause) for clause in split_clauses]
 
