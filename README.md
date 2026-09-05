@@ -1,4 +1,14 @@
 # OLMS
+Evaluate prompt outputs on small language models for variation.
+O = Organization similarity
+L = Lexical similarity
+M = Meaning / Semantic similarity
+S = Structural similarity
+
+## Workflow
+SLM Output --> Dependency relation tagging --> clause splitting -->
+BERTScore clauses --> match pairs --> O - L - M - S calculations --->
+Statistical analysis
 
 ## Dependency Parsing
 
