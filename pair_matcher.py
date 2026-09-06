@@ -129,26 +129,12 @@ class PairMatcher:
       count_a[i] += 1
       count_b[j] += 1
 
-    # -----------------------
-    # Leftover B clauses
-    # -----------------------
+    candidates = []
 
-    unmatched_b = [
-      j
-      for j in range(self.n_b)
-      if count_b[j] == 0
-    ]
+    for i in range(self.n_a):
+      for j in range(self.n_b):
 
-    for j in unmatched_b:
-
-      candidates = []
-
-      for i in range(self.n_a):
-
-        if count_a[i] >= self.capacity:
-          continue
-
-        if count_b[j] >= self.capacity:
+        if count_a[i] > 0 and count_b[j] > 0:
           continue
 
         if self._scores[i, j] < self.min_score:
@@ -161,62 +147,29 @@ class PairMatcher:
           (
             self._scores[i, j],
             i,
-          )
-        )
-
-      if not candidates:
-        continue
-
-      # Highest similarity first
-      _, best_i = max(candidates)
-
-      selected.add((best_i, j))
-      count_a[best_i] += 1
-      count_b[j] += 1
-
-    # -----------------------
-    # Leftover A clauses
-    # -----------------------
-
-    unmatched_a = [
-      i
-      for i in range(self.n_a)
-      if count_a[i] == 0
-    ]
-
-    for i in unmatched_a:
-
-      candidates = []
-
-      for j in range(self.n_b):
-
-        if count_a[i] >= self.capacity:
-          continue
-
-        if count_b[j] >= self.capacity:
-          continue
-
-        if self._scores[i, j] < self.min_score:
-          continue
-
-        if (i, j) in selected:
-          continue
-
-        candidates.append(
-          (
-            self._scores[i, j],
             j,
           )
         )
 
-      if not candidates:
+    candidates.sort(
+      key=lambda candidate: (
+        -candidate[0],
+        candidate[1],
+        candidate[2]
+      )
+    )
+
+    for _, i, j in candidates:
+
+      if count_a[i] >= self.capacity:
         continue
 
-      _, best_j = max(candidates)
+      if count_b[j] >= self.capacity:
+        continue
 
-      selected.add((i, best_j))
+      selected.add((i, j))
       count_a[i] += 1
-      count_b[best_j] += 1
+      count_b[j] += 1
 
     return list(selected)
 
@@ -235,6 +188,30 @@ class PairMatcher:
 
     # Step 2: attach clauses that Hungarian left unmatched
     matches = self._add_leftover_matches(matches)
+
+    return self._matches_to_dataframe(matches)
+
+  def match_report(self) -> dict[str, pd.DataFrame]:
+    """
+    Perform matching and return matched pairs plus clauses that received no match
+    """
+
+    matches = self._hungarian_core()
+    matches = self._add_leftover_matches(matches)
+
+    return {
+      "matches": self._matches_to_dataframe(matches),
+      "unmatched_a": self._unmatched_a_to_dataframe(matches),
+      "unmatched_b": self._unmatched_b_to_dataframe(matches)
+    }
+
+  def _matches_to_dataframe(
+      self,
+      matches: list[tuple[int, int]],
+  ) -> pd.DataFrame:
+    """
+    Convert selected clause matches to a DataFrame
+    """
 
     rows = []
 
@@ -271,3 +248,67 @@ class PairMatcher:
         ascending=[True, False, True]
       ).reset_index(drop=True)
     return result
+
+  def _unmatched_a_to_dataframe(
+      self,
+      matches: list[tuple[int, int]],
+  ) -> pd.DataFrame:
+    """
+    Convert A-side clauses with zero selected matches to a DataFrame
+    """
+
+    matched_a = {
+      i
+      for i, _ in matches
+    }
+
+    rows = []
+
+    for i in range(self.n_a):
+      if i in matched_a:
+        continue
+
+      rows.append({
+        "clause_in_a_index": i,
+        "clause_in_a": self.score_table.index[i]
+      })
+
+    return pd.DataFrame(
+      rows,
+      columns=[
+        "clause_in_a_index",
+        "clause_in_a"
+      ]
+    )
+
+  def _unmatched_b_to_dataframe(
+      self,
+      matches: list[tuple[int, int]],
+  ) -> pd.DataFrame:
+    """
+    Convert B-side clauses with zero selected matches to a DataFrame
+    """
+
+    matched_b = {
+      j
+      for _, j in matches
+    }
+
+    rows = []
+
+    for j in range(self.n_b):
+      if j in matched_b:
+        continue
+
+      rows.append({
+        "clause_in_b_index": j,
+        "clause_in_b": self.score_table.columns[j]
+      })
+
+    return pd.DataFrame(
+      rows,
+      columns=[
+        "clause_in_b_index",
+        "clause_in_b"
+      ]
+    )

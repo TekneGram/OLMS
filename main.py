@@ -22,12 +22,12 @@ def main() -> None:
 
   matcher = PairMatcher(
     score_table=bert_score_table,
-    min_score=0.40,
+    min_score=0.20,
     metric="f1",
     capacity=2
   )
 
-  print(matcher.match())
+  print(matcher.match_report())
 
   return
 
