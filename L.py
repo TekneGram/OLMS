@@ -51,6 +51,10 @@ class L:
     """
     return re.findall(r"\b\w+\b", text.lower())
 
+  # ---------
+  # Measure of Textual Lexical Diversity Area
+  # ---------
+
   def _mtld(
       self,
       text: str,
@@ -131,3 +135,64 @@ class L:
       return 0.0
 
     return 1.0 - abs(mtld_a - mtld_b) / max_mtld
+
+  # ------------
+  # Moving Average Type-Token Ratio
+  # ------------
+
+  def _mattr(
+      self,
+      text: str,
+      window_size: int = 25,
+  ) -> float:
+    """
+    Calculate Moving Average Type-Token Ratio
+    Returna. value in [0, 1]
+    Higher means greater local lexical diversity
+    """
+
+    tokens = self._tokenize_words(text)
+
+    if not tokens:
+      return 0.0
+
+    if len(tokens) <= window_size:
+      return len(set(tokens)) / len(tokens)
+
+    window_scores = []
+
+    for start in range(len(tokens) - window_size + 1):
+      window = tokens[start:start + window_size]
+      window_scores.append(
+        len(set(window)) / window_size
+      )
+
+    return float(sum(window_scores) / len(window_scores))
+
+  def mattr_similarity(
+      self,
+      window_size: int = 25,
+  ) -> float:
+    """
+    Compare two texts by MATTR similarity
+
+    Returns a value in [0, 1]
+    1.0 = same MATTR
+    0.0 = maximally different local lexical diversity
+    """
+
+    mattr_a = self._mattr(self.text_a, window_size)
+    mattr_b = self._mattr(self.text_b, window_size)
+
+    return 1.0 - abs(mattr_a - mattr_b)
+
+  def lexical_similarity(
+      self,
+      text_size: int = 99,
+      window_size: int = 25,
+      threshold: float = 0.72,
+  ) -> float:
+    if text_size >= 100:
+      return (self.mtld_similarity(threshold) + self.tf_idf_score())/2.0
+    else:
+      return (self.mattr_similarity(window_size) + self.tf_idf_score())/2.0
