@@ -20,7 +20,7 @@ class BertScore:
 
     precision = precision.reshape(len(self.text_a), len(self.text_b))
     recall = recall.reshape(len(self.text_a), len(self.text_b))
-    f1 = recall.reshape(len(self.text_a), len(self.text_b))
+    f1 = f1.reshape(len(self.text_a), len(self.text_b))
 
     table = pd.DataFrame(
       [
