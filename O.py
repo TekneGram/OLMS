@@ -1,15 +1,68 @@
 # This script contains classes that calculate the Organization part of the OLMS vector.
 # Kendall's Tau variant b is used here so that it is tie-aware (because clause matches can be many to many)
 from scipy.stats import kendalltau
+import pandas as pd
+import math
 
 class O:
-  def __init__(
-      
-  ) -> None:
-    return
+  """
+  Organization measures for matched clauses.
 
-  def normalized_tie_aware_tau() -> None:
-    return
+  This class calculates the Organization components inspired by the coherence section of Jang et al. (2025)
+
+  Note: this class is named O for Organization. It is not the same as Jang et al.'s (2025) O in A.1.3, p. 5701.
+  """
+
+  REQUIRED_COLUMNS = {
+    "clause_in_a_index",
+    "clause_in_b_index"
+  }
+
+  def __init__(
+      self,
+      match_table: pd.DataFrame
+  ) -> None:
+    # Validate the match_table
+    missing_columns = self.REQUIRED_COLUMNS - set(match_table.columns)
+    if missing_columns:
+      raise ValueError(
+        f"The paired clauses table from pair_matcher.py is missing required columns: {sorted(missing_columns)}"
+      )
+
+    self.match_table = match_table.copy()
+
+  def normalized_tie_aware_tau(self) -> float:
+    """
+    Calculate hte normalized order-correlation component
+      O = (tau + 1) / 2
+    using Kendall's Tau-b, which is tie-aware
+
+    Returns a value in [0, 1]:
+      1.0 means matched clauses preserve the same order.
+      0.5 means no clear order relationship / neutral
+      0.0 means perfectly reversed order
+    """
+    if self.match_table.empty:
+      return 0.0
+
+    if len(self.match_table) == 1:
+      return 1.0
+
+    clause_indices_a = self.match_table["clause_in_a_index"]
+    clause_indices_b = self.match_table["clause_in_b_index"]
+
+    result = kendalltau(
+      clause_indices_a,
+      clause_indices_b,
+      variant="b"
+    )
+
+    tau = result.statistic
+
+    if math.isnan(tau):
+      return 0.5
+
+    return (tau + 1.0) / 2.0
 
   def position_matching() -> None:
     return
