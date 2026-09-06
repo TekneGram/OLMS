@@ -22,8 +22,25 @@ def main() -> None:
   parsed_2 = deprel.parse("trial_2", my_text_2)
   splitter_1 = ClauseSplitter(parsed_1)
   splitter_2 = ClauseSplitter(parsed_2)
-  clauses_1 = splitter_1.split_all()
-  clauses_2 = splitter_2.split_all()
+
+  clauses_1_tokens = splitter_1.split_all_tokens()
+  clauses_2_tokens = splitter_2.split_all_tokens()
+
+  clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
+  clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
+
+  # for i, clause in enumerate(clauses_1):
+  #   print(i, clause)
+
+  # for i, clause_tokens in enumerate(clauses_1_tokens):
+  #   for token in sorted(clause_tokens, key=lambda token: token.token_id):
+  #     print(
+  #       token.token_id,
+  #       token.text,
+  #       token.upos,
+  #       token.dependency_relation,
+  #       token.head_token_id
+  #     )
 
   bertScorer = BertScore(clauses_1, clauses_2)
   bert_score_table = bertScorer.create_bert_score_table()
@@ -64,6 +81,14 @@ def main() -> None:
   # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
   lexical_similarity_score = lexis.lexical_similarity(text_size=101)
   print(lexical_similarity_score)
+
+  structure = S(
+    match_table=clause_pairs,
+    clauses_a_tokens=clauses_1_tokens,
+    clauses_b_tokens=clauses_2_tokens
+  )
+  structural_similarity_score = structure.structure_score()
+  print(structural_similarity_score)
 
 
 

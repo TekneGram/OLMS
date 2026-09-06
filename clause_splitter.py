@@ -8,20 +8,35 @@ class ClauseSplitter:
     self.parsed = parsed
 
   def split_all(self) -> list[str]:
+    return [
+      self.token_text(clause_tokens)
+      for clause_tokens in self.split_all_tokens()
+    ]
+
+  def split_all_tokens(self) -> list[list[DependencyToken]]:
     clauses = []
 
     for sentence_tokens in self.parsed.tokens_by_sentence.values():
-      clauses.extend(self.split_sentence(sentence_tokens))
+      clauses.extend(self.split_sentence_tokens(sentence_tokens))
 
     return clauses
-
-  def clause_start_id(self, tokens: list[DependencyToken]) -> int:
-      return min(token.token_id for token in tokens)
 
   def split_sentence(
       self,
       sentence_tokens: list[DependencyToken],
   ) -> list[str]:
+    return [
+      self.token_text(clause_tokens)
+      for clause_tokens in self.split_sentence_tokens(sentence_tokens)
+    ]
+
+  def clause_start_id(self, tokens: list[DependencyToken]) -> int:
+      return min(token.token_id for token in tokens)
+
+  def split_sentence_tokens(
+      self,
+      sentence_tokens: list[DependencyToken],
+  ) -> list[list[DependencyToken]]:
     if not sentence_tokens:
       return []
 
@@ -60,7 +75,7 @@ class ClauseSplitter:
       key=self.clause_start_id
     )
 
-    return [self.token_text(clause) for clause in split_clauses]
+    return split_clauses
 
   def collect_subtree(
       self,
