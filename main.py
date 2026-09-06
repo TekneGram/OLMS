@@ -30,11 +30,15 @@ def main() -> None:
 
   clause_pairs = matcher.match()
   organization = O(
-    match_table=clause_pairs
+    match_table=clause_pairs,
+    n_clauses_a=clause_pairs["clause_in_a_index"].max(),
+    n_clauses_b=clause_pairs["clause_in_b_index"].max()
   )
 
-  tau = organization.normalized_tie_aware_tau()
-  print(tau)
+  norm_tau = organization.normalized_tie_aware_tau()
+  print(norm_tau)
+  position_score = organization.position_matching()
+  print(position_score)
 
 
 

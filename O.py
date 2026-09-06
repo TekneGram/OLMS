@@ -20,7 +20,9 @@ class O:
 
   def __init__(
       self,
-      match_table: pd.DataFrame
+      match_table: pd.DataFrame,
+      n_clauses_a: int,
+      n_clauses_b: int,
   ) -> None:
     # Validate the match_table
     missing_columns = self.REQUIRED_COLUMNS - set(match_table.columns)
@@ -30,6 +32,8 @@ class O:
       )
 
     self.match_table = match_table.copy()
+    self.n_clauses_a = n_clauses_a
+    self.n_clauses_b = n_clauses_b
 
   def normalized_tie_aware_tau(self) -> float:
     """
@@ -64,8 +68,42 @@ class O:
 
     return (tau + 1.0) / 2.0
 
-  def position_matching() -> None:
-    return
+  def position_matching(self) -> float:
+    """
+    Calculate the average normalized position similarity across matched clauses.
+
+    For each matched pair (i, j):
+
+      p_i = i / (m_a - 1)
+      p_j = j / (m_b - 1)
+      P_ij = 1 - abs(p_i - p_j)
+
+    Returns a value in [0, 1]
+    """
+    
+    if self.match_table.empty:
+      return 0.0
+
+    denominator_a = self.n_clauses_a - 1
+    denominator_b = self.n_clauses_b - 1
+
+    if denominator_a <= 0:
+      normalized_a = 0.0
+    else:
+      normalized_a = (
+        self.match_table["clause_in_a_index"] / denominator_a
+      )
+
+    if denominator_b <= 0:
+      normalized_b = 0.0
+    else:
+      normalized_b = (
+        self.match_table["clause_in_b_index"] / denominator_b
+      )
+
+    pair_scores = 1.0 - (normalized_a - normalized_b).abs()
+    
+    return float(pair_scores.mean())
 
   def sequential_matching() -> None:
     return
