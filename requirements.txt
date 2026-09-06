@@ -1,3 +1,4 @@
 ufal.udpipe
 bert-score
 scipy
+sklearn

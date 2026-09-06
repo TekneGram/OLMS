@@ -3,6 +3,8 @@ from clause_splitter import ClauseSplitter
 from bertscorer import BertScore
 from pair_matcher import PairMatcher
 from O import O
+from M import M
+from L import L
 def main() -> None:
   my_text = "The thesis statement clearly presents your opinion, but it needs to explain why the topic matters. Although your thesis statement is focused, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good, but it should state your exact position more clearly. To make the thesis stronger, add a reason that connects your opinion to the main argument. Your thesis is understandable because it gives the reader a clear opinion. The thesis would be clearer if you named the two reasons that your body paragraph will explain. You have a thesis statement, but because it is very general, the reader may not know your main argument. Your thesis statement, which appears at the end of the introduction, gives an opinion but does not include a clear reason. I suggest revising the thesis so that it includes both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
   my_text_2 = "The thesis statement clearly presents your opinion. However, it needs to explain why the topic matters. Your thesis statement is focused. However, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good. But it should state your exact position more clearly. To make the thesis stronger add a reason. The reason should connect your opinion to the main argument. Your thesis is understandable. This is because it gives the reader a clear opinion. The thesis could be clearer. Name the two reasons that your body paragraph will explain. You have a thesis statement. But it is very general. So the reader may not know your main argument. Your thesis statement gives an opinion. This appears at the end of the introduction. However, it does not include a clear reason. I suggest revising the thesis. It should include both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
@@ -21,9 +23,12 @@ def main() -> None:
   bertScorer = BertScore(clauses_1, clauses_2)
   bert_score_table = bertScorer.create_bert_score_table()
 
+  # Setting min_score = 0.35 appears to be more inclusive
+  # Setting min_score = 0.3 leads to clause matches that seem a bit weird
+  # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
   matcher = PairMatcher(
     score_table=bert_score_table,
-    min_score=0.20,
+    min_score=0.50,
     metric="f1",
     capacity=2
   )
@@ -39,6 +44,19 @@ def main() -> None:
 
   organization_score = organization.organization_score()
   print(organization_score)
+
+  meaning = M(
+    match_table=clause_pairs
+  )
+  semantics_score = meaning.semantics_score()
+  print(semantics_score)
+
+  lexis = L(
+    text_a = my_text,
+    text_b = my_text_2
+  )
+  lexis_score = lexis.lexical_score()
+  print(lexis_score)
 
 
 
