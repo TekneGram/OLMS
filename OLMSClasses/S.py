@@ -3,7 +3,7 @@ from collections import Counter
 
 import pandas as pd
 
-from deprel import DependencyToken
+from TextProcessing.deprel import DependencyToken
 
 class S:
   """

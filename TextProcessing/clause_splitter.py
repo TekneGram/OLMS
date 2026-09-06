@@ -1,4 +1,4 @@
-from deprel import DependencyToken, DependencyParse
+from TextProcessing.deprel import DependencyToken, DependencyParse
 
 class ClauseSplitter:
   SPLIT_DEPRELS = {"conj", "advcl", "acl:relcl"}
