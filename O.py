@@ -80,7 +80,7 @@ class O:
 
     Returns a value in [0, 1]
     """
-    
+
     if self.match_table.empty:
       return 0.0
 
@@ -105,5 +105,72 @@ class O:
     
     return float(pair_scores.mean())
 
-  def sequential_matching() -> None:
-    return
+  def sequential_matching(self) -> float:
+    if self.match_table.empty:
+      return 0.0
+
+    a_to_b = (
+      self.match_table
+      .groupby("clause_in_a_index")["clause_in_b_index"]
+      .apply(set)
+      .to_dict()
+    )
+
+    b_to_a = (
+      self.match_table
+      .groupby("clause_in_b_index")["clause_in_a_index"]
+      .apply(set)
+      .to_dict()
+    )
+
+    score_a = self._directional_continuity(
+      source_to_target = a_to_b,
+      n_source_clauses = self.n_clauses_a,
+    )
+
+    score_b = self._directional_continuity(
+      source_to_target = b_to_a,
+      n_source_clauses = self.n_clauses_b,
+    )
+
+    return float((score_a + score_b) / 2.0)
+
+  def _directional_continuity(
+      self,
+      source_to_target: dict[int, set[int]],
+      n_source_clauses: int,
+  ) -> float:
+    if n_source_clauses <= 1:
+      return 1.0
+
+    preserved = 0
+    comparable = 0
+
+    for source_index in range(n_source_clauses - 1):
+      current_targets = source_to_target.get(source_index)
+      next_targets = source_to_target.get(source_index + 1)
+
+      if not current_targets or not next_targets:
+        continue
+
+      comparable += 1
+
+      transition_is_preserved = any(
+        next_target == current_target + 1
+        for current_target in current_targets
+        for next_target in next_targets
+      )
+
+      if transition_is_preserved:
+        preserved += 1
+
+    if comparable == 0:
+      return 0.0
+
+    return preserved / comparable
+
+  def organization_score(self) -> float:
+    norm_tau = self.normalized_tie_aware_tau()
+    position_score = self.position_matching()
+    sequential_score = self.sequential_matching()
+    return (0.34*norm_tau + 0.33*position_score + 0.33*sequential_score)
