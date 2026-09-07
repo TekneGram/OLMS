@@ -3,3 +3,4 @@ bert-score
 scipy
 sklearn
 llama-cpp-python
+tabulate

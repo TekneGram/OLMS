@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from scipy.optimize import linear_sum_assignment
 
@@ -204,6 +205,32 @@ class PairMatcher:
       "unmatched_a": self._unmatched_a_to_dataframe(matches),
       "unmatched_b": self._unmatched_b_to_dataframe(matches)
     }
+
+  def append_matches_to_markdown(
+      self,
+      output_path: str | Path,
+      filename: str,
+      clause_pairs: pd.DataFrame,
+  ) -> None:
+    output_path = Path(output_path)
+
+    with output_path.open("a", encoding="utf-8") as file:
+      file.write(f"## Filename: {filename}\n\n")
+      file.write(f"Metric: {self.metric}\n\n")
+      file.write(f"Minimum score: {self.min_score}\n\n")
+      file.write(f"Capacity: {self.capacity}\n\n")
+
+      if clause_pairs.empty:
+        file.write("No clause pairs matched.\n\n")
+        return
+
+      try:
+        file.write(clause_pairs.to_markdown(index=False))
+        file.write("\n\n")
+      except ImportError:
+        file.write("```text\n")
+        file.write(clause_pairs.to_string(index=False))
+        file.write("\n```\n\n")
 
   def _matches_to_dataframe(
       self,

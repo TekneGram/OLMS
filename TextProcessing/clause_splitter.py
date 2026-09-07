@@ -1,4 +1,5 @@
 from TextProcessing.deprel import DependencyToken, DependencyParse
+from pathlib import Path
 
 class ClauseSplitter:
   SPLIT_DEPRELS = {"conj", "advcl", "acl:relcl"}
@@ -20,6 +21,25 @@ class ClauseSplitter:
       clauses.extend(self.split_sentence_tokens(sentence_tokens))
 
     return clauses
+
+  @staticmethod
+  def append_clause_sets_to_markdown(
+      output_path: str | Path,
+      filename: str,
+      clause_sets: dict[str, list[str]],
+  ) -> None:
+    output_path = Path(output_path)
+
+    with output_path.open("a", encoding="utf-8") as file:
+      file.write(f"## Filename: {filename}\n\n")
+
+      for label, clauses in clause_sets.items():
+        file.write(f"### {label}\n\n")
+
+        for index, clause in enumerate(clauses, start=1):
+          file.write(f"{index}. {clause}\n")
+
+        file.write("\n")
 
   def split_sentence(
       self,
