@@ -2,3 +2,4 @@ ufal.udpipe
 bert-score
 scipy
 sklearn
+llama-cpp-python
