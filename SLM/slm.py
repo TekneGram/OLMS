@@ -1,4 +1,5 @@
 from llama_cpp import Llama
+import configuration
 import json
 import re
 
@@ -21,7 +22,7 @@ class SLM:
 
   def _getAI(self) -> Llama:
     llm = Llama(
-      model_path="",
+      model_path=configuration.llm_path,
       n_ctx=4096,
       n_threads=8,
       n_gpu_layers=999,

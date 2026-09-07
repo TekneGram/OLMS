@@ -1,0 +1,1 @@
+llm_path = "/Users/danielmikaleola/Documents/Development/EssayLensPython/.appdata/models/Qwen3-4B-Q8_0.gguf"
