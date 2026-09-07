@@ -1,5 +1,6 @@
 from SLM.slm import SLM
 import configuration
+import csv
 from pathlib import Path
 
 class EssayFeedback:
@@ -18,7 +19,7 @@ class EssayFeedback:
 
     return responses
 
-  def generate_multiple_feedback(self) -> list[dict[str, object]]:
+  def generate_multiple_feedback(self, output_filename: str | None = None) -> list[dict[str, object]]:
     # Loop through all the files in the essay path provided by configuration
     essays_path = Path(configuration.essays_path)
 
@@ -49,4 +50,47 @@ class EssayFeedback:
         "responses": responses
       })
 
+    if output_filename:
+      self._save_feedback_to_csv(all_feedback, output_filename)
+
     return all_feedback
+
+  def _save_feedback_to_csv(self, all_feedback: list[dict[str, object]], output_filename: str) -> Path:
+    output_path = Path(output_filename)
+
+    if output_path.name != output_filename:
+      raise ValueError("output_filename must be a filename only, not a path.")
+
+    if output_path.suffix != ".csv":
+      output_path = output_path.with_suffix(".csv")
+
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
+    output_path = data_dir / output_path
+
+    rows = []
+
+    for essay_feedback in all_feedback:
+      essay_file = essay_feedback["essay_file"]
+      responses = essay_feedback["responses"]
+
+      for response_index, response in enumerate(responses, start=1):
+        rows.append({
+          "essay_file": essay_file,
+          "response_index": response_index,
+          "response": response
+        })
+
+    with output_path.open("w", encoding="utf-8", newline="") as csv_file:
+      writer = csv.DictWriter(
+        csv_file,
+        fieldnames=[
+          "essay_file",
+          "response_index",
+          "response"
+        ]
+      )
+      writer.writeheader()
+      writer.writerows(rows)
+
+    return output_path
