@@ -14,8 +14,9 @@ from SLM.slm import SLM
 
 def main() -> None:
 
+  data_name = "feedback_data"
   fb = EssayFeedback()
-  all_feedback = fb.generate_multiple_feedback()
+  all_feedback = fb.generate_multiple_feedback(output_filename=data_name)
 
   slm = SLM()
   my_text = slm.run_inference("Give me a brief overview of quantum mechanics in six sentences.")
