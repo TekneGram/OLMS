@@ -7,14 +7,21 @@ from OLMSClasses.L import L
 from OLMSClasses.M import M
 from OLMSClasses.S import S
 
+import configuration
+
 from SLM.slm import SLM
 
 def main() -> None:
 
-  
+  slm = SLM()
+  my_text = slm.run_inference("Give me a brief overview of quantum mechanics in six sentences.")
+  print(my_text)
 
-  my_text = "The thesis statement clearly presents your opinion, but it needs to explain why the topic matters. Although your thesis statement is focused, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good, but it should state your exact position more clearly. To make the thesis stronger, add a reason that connects your opinion to the main argument. Your thesis is understandable because it gives the reader a clear opinion. The thesis would be clearer if you named the two reasons that your body paragraph will explain. You have a thesis statement, but because it is very general, the reader may not know your main argument. Your thesis statement, which appears at the end of the introduction, gives an opinion but does not include a clear reason. I suggest revising the thesis so that it includes both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
-  my_text_2 = "The thesis statement clearly presents your opinion. However, it needs to explain why the topic matters. Your thesis statement is focused. However, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good. But it should state your exact position more clearly. To make the thesis stronger add a reason. The reason should connect your opinion to the main argument. Your thesis is understandable. This is because it gives the reader a clear opinion. The thesis could be clearer. Name the two reasons that your body paragraph will explain. You have a thesis statement. But it is very general. So the reader may not know your main argument. Your thesis statement gives an opinion. This appears at the end of the introduction. However, it does not include a clear reason. I suggest revising the thesis. It should include both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
+  my_text_2 = slm.run_inference("Give me a simple overview of quantum mechanics in six simple sentences.")
+  print(my_text_2)
+
+  # my_text = "The thesis statement clearly presents your opinion, but it needs to explain why the topic matters. Although your thesis statement is focused, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good, but it should state your exact position more clearly. To make the thesis stronger, add a reason that connects your opinion to the main argument. Your thesis is understandable because it gives the reader a clear opinion. The thesis would be clearer if you named the two reasons that your body paragraph will explain. You have a thesis statement, but because it is very general, the reader may not know your main argument. Your thesis statement, which appears at the end of the introduction, gives an opinion but does not include a clear reason. I suggest revising the thesis so that it includes both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
+  # my_text_2 = "The thesis statement clearly presents your opinion. However, it needs to explain why the topic matters. Your thesis statement is focused. However, it does not fully preview the reasons you discuss in the essay. Your thesis says that school uniforms are good. But it should state your exact position more clearly. To make the thesis stronger add a reason. The reason should connect your opinion to the main argument. Your thesis is understandable. This is because it gives the reader a clear opinion. The thesis could be clearer. Name the two reasons that your body paragraph will explain. You have a thesis statement. But it is very general. So the reader may not know your main argument. Your thesis statement gives an opinion. This appears at the end of the introduction. However, it does not include a clear reason. I suggest revising the thesis. It should include both your position and the reason for that position. The thesis is not specific enough to guide the rest of the essay."
 
   # Add a text length checker.
   # If the text length is less than 100 words for any text, then we cannot calculate the MTLD score in L.py
@@ -55,9 +62,9 @@ def main() -> None:
   # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
   matcher = PairMatcher(
     score_table=bert_score_table,
-    min_score=0.50,
+    min_score=configuration.min_score,
     metric="f1",
-    capacity=2
+    capacity=configuration.capacity
   )
 
   clause_pairs = matcher.match()
@@ -65,27 +72,29 @@ def main() -> None:
 
   organization = O(
     match_table=clause_pairs,
-    n_clauses_a=clause_pairs["clause_in_a_index"].max(),
-    n_clauses_b=clause_pairs["clause_in_b_index"].max()
+    n_clauses_a=len(clauses_1),
+    n_clauses_b=len(clauses_2)
   )
 
   organization_score = organization.organization_score()
-  print(organization_score)
+  print("O Score: ", organization_score)
+
+  lexis = L(
+      text_a = my_text,
+      text_b = my_text_2
+    )
+  # In real implementation, input min of text length of my_text and my_text_2 for text_size
+  # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
+  lexical_similarity_score = lexis.lexical_similarity(text_size=101)
+  print("L Score: ", lexical_similarity_score)
 
   meaning = M(
     match_table=clause_pairs
   )
   semantics_score = meaning.semantics_score()
-  print(semantics_score)
+  print("M Score: ", semantics_score)
 
-  lexis = L(
-    text_a = my_text,
-    text_b = my_text_2
-  )
-  # In real implementation, input min of text length of my_text and my_text_2 for text_size
-  # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
-  lexical_similarity_score = lexis.lexical_similarity(text_size=101)
-  print(lexical_similarity_score)
+  
 
   structure = S(
     match_table=clause_pairs,
@@ -93,7 +102,7 @@ def main() -> None:
     clauses_b_tokens=clauses_2_tokens
   )
   structural_similarity_score = structure.structure_score()
-  print(structural_similarity_score)
+  print("S Score: ", structural_similarity_score)
 
 
 
