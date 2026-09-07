@@ -19,6 +19,12 @@ class PairMatcher:
     DataFrame returned by BertScore.create_bert_score_table()
     Each cell must contains [precision, recall, f1]
 
+  tfidf_score_table:
+    Optional DataFrame returned by TFIDFScore.create_tfidf_score_table()
+    Each cell must contain a TF-IDF cosine similarity score.
+    If provided, matching uses the average of the selected BERTScore metric
+    and the TF-IDF score.
+
   min_score:
     Minimum score required for a pair to be eligible
 
@@ -39,6 +45,7 @@ class PairMatcher:
   def __init__(
       self,
       score_table: pd.DataFrame,
+      tfidf_score_table: pd.DataFrame | None = None,
       min_score: float = 0.0,
       metric: str = "f1",
       capacity: int = 2,
@@ -52,6 +59,7 @@ class PairMatcher:
       raise ValueError("capacity must be at least 1.")
 
     self.score_table = score_table
+    self.tfidf_score_table = tfidf_score_table
     self.min_score = min_score
     self.metric = metric
     self.capacity = capacity
@@ -59,11 +67,32 @@ class PairMatcher:
     self.n_a = len(score_table.index)   # Number of clauses in A
     self.n_b = len(score_table.columns) # Number of clauses in B
 
+    self._validate_tfidf_score_table()
     self._scores = self._extract_scores()
+
+  def _validate_tfidf_score_table(self) -> None:
+    if self.tfidf_score_table is None:
+      return
+
+    if self.tfidf_score_table.shape != self.score_table.shape:
+      raise ValueError(
+        "tfidf_score_table must have the same shape as score_table"
+      )
+
+    if not self.tfidf_score_table.index.equals(self.score_table.index):
+      raise ValueError(
+        "tfidf_score_table must have the same index as score_table"
+      )
+
+    if not self.tfidf_score_table.columns.equals(self.score_table.columns):
+      raise ValueError(
+        "tfidf_score_table must have the same columns as score_table"
+      )
 
   def _extract_scores(self) -> np.ndarray:
     """
-    Extract the selected BERTScore component into a numeric matrix
+    Extract the selected BERTScore component into a numeric matrix.
+    If TF-IDF scores are available, average both scores for matching.
     """
 
     metric_index = self.METRIC_INDEX[self.metric]
@@ -76,7 +105,13 @@ class PairMatcher:
     for i in range(self.n_a):
       for j in range(self.n_b):
         cell = self.score_table.iat[i, j]
-        scores[i, j] = float(cell[metric_index])
+        bert_score = float(cell[metric_index])
+
+        if self.tfidf_score_table is None:
+          scores[i, j] = bert_score
+        else:
+          tfidf_score = float(self.tfidf_score_table.iat[i, j])
+          scores[i, j] = (bert_score + tfidf_score) / 2.0
 
     return scores
 
@@ -246,32 +281,45 @@ class PairMatcher:
 
       precision, recall, f1 = self.score_table.iat[i, j]
 
-      rows.append({
+      row = {
         "clause_in_a_index": i,
         "clause_in_b_index": j,
         "clause_in_a": self.score_table.index[i],
         "clause_in_b": self.score_table.columns[j],
         "precision": float(precision),
         "recall": float(recall),
-        "f1": float(f1)
-      })
+        "f1": float(f1),
+      }
+
+      if self.tfidf_score_table is not None:
+        row["tfidf"] = float(self.tfidf_score_table.iat[i, j])
+
+      row["match_score"] = float(self._scores[i, j])
+      rows.append(row)
+
+    columns = [
+      "clause_in_a_index",
+      "clause_in_b_index",
+      "clause_in_a",
+      "clause_in_b",
+      "precision",
+      "recall",
+      "f1"
+    ]
+
+    if self.tfidf_score_table is not None:
+      columns.append("tfidf")
+
+    columns.append("match_score")
 
     result = pd.DataFrame(
       rows,
-      columns=[
-        "clause_in_a_index",
-        "clause_in_b_index",
-        "clause_in_a",
-        "clause_in_b",
-        "precision",
-        "recall",
-        "f1"
-      ]
+      columns=columns
     )
 
     if not result.empty:
       result = result.sort_values(
-        ["clause_in_a_index", "f1", "clause_in_b_index"],
+        ["clause_in_a_index", "match_score", "clause_in_b_index"],
         ascending=[True, False, True]
       ).reset_index(drop=True)
     return result

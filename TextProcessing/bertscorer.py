@@ -86,7 +86,7 @@ class BertScore:
   ) -> list[str]:
     return [
       " ".join(
-        texts[(start + offset) % len(texts)]
+        texts[min(start + offset, len(texts) - 1)]
         for offset in range(window_size)
       )
       for start in range(len(texts))

@@ -1,6 +1,7 @@
 from TextProcessing.deprel import DependencyParser
 from TextProcessing.clause_splitter import ClauseSplitter
 from TextProcessing.bertscorer import BertScore
+from TextProcessing.tf_idf_scorer import TFIDFScore
 from TextProcessing.pair_matcher import PairMatcher
 from TextProcessing.sentence_splitter import SentenceSplitter
 from OLMSClasses.O import O
@@ -64,8 +65,11 @@ def main() -> None:
     )
     bertScorer = BertScore(clauses_1, clauses_2)
     bert_score_table = bertScorer.create_bert_score_table()
+    tfidfScorer = TFIDFScore(clauses_1, clauses_2)
+    tfidf_score_table = tfidfScorer.create_tfidf_score_table()
     matcher = PairMatcher(
       score_table=bert_score_table,
+      tfidf_score_table=tfidf_score_table,
       min_score=configuration.min_score,
       metric="f1",
       capacity=configuration.capacity
@@ -128,12 +132,15 @@ def main() -> None:
 
   bertScorer = BertScore(clauses_1, clauses_2)
   bert_score_table = bertScorer.create_bert_score_table()
+  tfidfScorer = TFIDFScore(clauses_1, clauses_2)
+  tfidf_score_table = tfidfScorer.create_tfidf_score_table()
 
   # Setting min_score = 0.35 appears to be more inclusive
   # Setting min_score = 0.3 leads to clause matches that seem a bit weird
   # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
   matcher = PairMatcher(
     score_table=bert_score_table,
+    tfidf_score_table=tfidf_score_table,
     min_score=configuration.min_score,
     metric="f1",
     capacity=configuration.capacity
