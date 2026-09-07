@@ -7,17 +7,12 @@ CONTENT = (
   "Do not include hidden reasoning, chain-of-thought, or <think> tags."
 )
 
-SYSTEM_MESSAGES = [
-  {
-    "role": "system", "content": CONTENT
-  }
-]
-
 class SLM:
   def __init__(
       self
   ) -> None:
     self.llm = self._getAI()
+    self.system_content = CONTENT
     return
 
   def _getAI(self) -> Llama:
@@ -31,8 +26,14 @@ class SLM:
     return llm
 
   def run_inference(self, user_request) -> str:
+    system_messages = [
+      {
+        "role": "system",
+        "content": self.system_content,
+      }
+    ]
     chat_messages = [
-      *SYSTEM_MESSAGES,
+      *system_messages,
       {
         "role": "user",
         "content": f"{user_request}\n\n/no_think"
@@ -53,3 +54,6 @@ class SLM:
     tutor_message = re.sub(r"</?think>", "", tutor_message).strip()
 
     return tutor_message
+
+  def set_system_content(self, system_content) -> None:
+    self.system_content = system_content

@@ -8,10 +8,14 @@ from OLMSClasses.M import M
 from OLMSClasses.S import S
 
 import configuration
+from SLM.essay_feedback import EssayFeedback
 
 from SLM.slm import SLM
 
 def main() -> None:
+
+  fb = EssayFeedback()
+  all_feedback = fb.generate_multiple_feedback()
 
   slm = SLM()
   my_text = slm.run_inference("Give me a brief overview of quantum mechanics in six sentences.")
