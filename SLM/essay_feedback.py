@@ -52,14 +52,20 @@ class EssayFeedback:
 
     if output_filename:
       self._save_feedback_to_csv(all_feedback, output_filename)
+      self._save_metadata(output_filename)
 
     return all_feedback
 
-  def _save_feedback_to_csv(self, all_feedback: list[dict[str, object]], output_filename: str) -> Path:
+  def _output_filename_to_path(self, output_filename: str) -> Path:
     output_path = Path(output_filename)
 
     if output_path.name != output_filename:
       raise ValueError("output_filename must be a filename only, not a path.")
+
+    return output_path
+
+  def _save_feedback_to_csv(self, all_feedback: list[dict[str, object]], output_filename: str) -> Path:
+    output_path = self._output_filename_to_path(output_filename)
 
     if output_path.suffix != ".csv":
       output_path = output_path.with_suffix(".csv")
@@ -94,3 +100,27 @@ class EssayFeedback:
       writer.writerows(rows)
 
     return output_path
+
+  def _save_metadata(self, output_filename: str) -> Path:
+    output_path = self._output_filename_to_path(output_filename)
+
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
+    metadata_path = data_dir / f"{output_path.stem}_metadata.txt"
+
+    metadata = {
+      "essays_path": configuration.essays_path,
+      "ai_role": configuration.ai_role,
+      "ai_task_main": configuration.ai_task_main,
+      "ai_knowledge": "".join(configuration.ai_knowledge),
+      "ai_task_description": configuration.ai_task_description,
+      "ai_recipient_information_1": configuration.ai_recipient_information_1,
+      "ai_recipient_information_2": configuration.ai_recipient_information_2
+    }
+
+    with metadata_path.open("w", encoding="utf-8") as metadata_file:
+      for key, value in metadata.items():
+        metadata_file.write(f"{key}:\n")
+        metadata_file.write(f"{value}\n\n")
+
+    return metadata_path
