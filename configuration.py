@@ -21,7 +21,7 @@ stream=True
 # ---------------------
 # Clause Pair-Matcher
 # ---------------------
-capacity=1
+capacity=2
 min_score=0.4
 
 # ---------------------
@@ -41,8 +41,8 @@ ai_knowledge = (
   )
 ai_task_description = "Evaluate the properties of the writer's thesis statement in the essay provided by the student: \n\n"
 
-ai_recipient_information_1 = "Be thorough in your evaluation of each property. Provide advice. The students are CEFR level B1, so use simple sentences and vocabulary."
-ai_recipient_information_2 = "Be thorough in your evaluation of each property. Provide advice. The students are CEFR level B1, so use simple sentences and vocabulary."
+ai_recipient_information_1 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence. Use simple sentences and words because the student is CEFR B1 level."
+ai_recipient_information_2 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence."
 
 ai_response_format = {
   "type": "json_object",

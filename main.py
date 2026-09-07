@@ -49,13 +49,13 @@ def main() -> None:
 
     parsed_1 = deprel.parse(f"{essay_file}_response_1", response_1)
     parsed_2 = deprel.parse(f"{essay_file}_response_2", response_2)
-    splitter_1 = SentenceSplitter(parsed_1)
-    splitter_2 = SentenceSplitter(parsed_2)
-    clauses_1_tokens = splitter_1.split_all_tokens()
-    clauses_2_tokens = splitter_2.split_all_tokens()
+    splitter_1 = ClauseSplitter(parsed_1)
+    splitter_2 = ClauseSplitter(parsed_2)
+    clauses_1_tokens = splitter_1.split_all_tokens_strict()
+    clauses_2_tokens = splitter_2.split_all_tokens_strict()
     clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
     clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
-    SentenceSplitter.append_clause_sets_to_markdown(
+    ClauseSplitter.append_clause_sets_to_markdown(
       clauses_path,
       essay_file,
       {

@@ -25,6 +25,14 @@ class PairMatcher:
     If provided, matching uses the average of the selected BERTScore metric
     and the TF-IDF score.
 
+  use_position_bias:
+    If True, matching blends semantic/lexical similarity with normalized
+    clause position similarity.
+
+  position_weight:
+    Weight assigned to position similarity when use_position_bias is True.
+    The semantic/lexical score receives the remaining weight.
+
   min_score:
     Minimum score required for a pair to be eligible
 
@@ -49,6 +57,8 @@ class PairMatcher:
       min_score: float = 0.0,
       metric: str = "f1",
       capacity: int = 2,
+      use_position_bias: bool = False,
+      position_weight: float = 0.15,
   ) -> None:
     if metric not in self.METRIC_INDEX:
       raise ValueError(
@@ -58,11 +68,16 @@ class PairMatcher:
     if capacity < 1:
       raise ValueError("capacity must be at least 1.")
 
+    if not 0.0 <= position_weight <= 1.0:
+      raise ValueError("position_weight must be between 0.0 and 1.0")
+
     self.score_table = score_table
     self.tfidf_score_table = tfidf_score_table
     self.min_score = min_score
     self.metric = metric
     self.capacity = capacity
+    self.use_position_bias = use_position_bias
+    self.position_weight = position_weight
 
     self.n_a = len(score_table.index)   # Number of clauses in A
     self.n_b = len(score_table.columns) # Number of clauses in B
@@ -91,12 +106,8 @@ class PairMatcher:
 
   def _extract_scores(self) -> np.ndarray:
     """
-    Extract the selected BERTScore component into a numeric matrix.
-    If TF-IDF scores are available, average both scores for matching.
+    Build the numeric alignment score matrix used for matching.
     """
-
-    metric_index = self.METRIC_INDEX[self.metric]
-
     scores = np.zeros(
       (self.n_a, self.n_b),
       dtype=float
@@ -104,16 +115,75 @@ class PairMatcher:
 
     for i in range(self.n_a):
       for j in range(self.n_b):
-        cell = self.score_table.iat[i, j]
-        bert_score = float(cell[metric_index])
-
-        if self.tfidf_score_table is None:
-          scores[i, j] = bert_score
-        else:
-          tfidf_score = float(self.tfidf_score_table.iat[i, j])
-          scores[i, j] = (bert_score + tfidf_score) / 2.0
+        scores[i, j] = self._alignment_score_at(i, j)
 
     return scores
+
+  def _bert_score_at(
+      self,
+      i: int,
+      j: int,
+  ) -> float:
+    metric_index = self.METRIC_INDEX[self.metric]
+    cell = self.score_table.iat[i, j]
+    return float(cell[metric_index])
+
+  def _tfidf_score_at(
+      self,
+      i: int,
+      j: int,
+  ) -> float | None:
+    if self.tfidf_score_table is None:
+      return None
+
+    return float(self.tfidf_score_table.iat[i, j])
+
+  def _semantic_lexical_score_at(
+      self,
+      i: int,
+      j: int,
+  ) -> float:
+    bert_score = self._bert_score_at(i, j)
+    tfidf_score = self._tfidf_score_at(i, j)
+
+    if tfidf_score is None:
+      return bert_score
+
+    return (bert_score + tfidf_score) / 2.0
+
+  def _position_score_at(
+      self,
+      i: int,
+      j: int,
+  ) -> float:
+    position_a = i / (self.n_a - 1) if self.n_a > 1 else 0.0
+    position_b = j / (self.n_b - 1) if self.n_b > 1 else 0.0
+    return 1.0 - abs(position_a - position_b)
+
+  def _alignment_score_at(
+      self,
+      i: int,
+      j: int,
+  ) -> float:
+    semantic_lexical_score = self._semantic_lexical_score_at(i, j)
+
+    if not self.use_position_bias:
+      return semantic_lexical_score
+
+    position_score = self._position_score_at(i, j)
+    semantic_weight = 1.0 - self.position_weight
+
+    return (
+      semantic_weight * semantic_lexical_score
+      + self.position_weight * position_score
+    )
+
+  def alignment_score_table(self) -> pd.DataFrame:
+    return pd.DataFrame(
+      self._scores,
+      index=self.score_table.index,
+      columns=self.score_table.columns
+    )
 
   def _hungarian_core(self) -> list[tuple[int, int]]:
     """
@@ -294,6 +364,10 @@ class PairMatcher:
       if self.tfidf_score_table is not None:
         row["tfidf"] = float(self.tfidf_score_table.iat[i, j])
 
+      if self.use_position_bias:
+        row["semantic_lexical_score"] = self._semantic_lexical_score_at(i, j)
+        row["position_score"] = self._position_score_at(i, j)
+
       row["match_score"] = float(self._scores[i, j])
       rows.append(row)
 
@@ -309,6 +383,12 @@ class PairMatcher:
 
     if self.tfidf_score_table is not None:
       columns.append("tfidf")
+
+    if self.use_position_bias:
+      columns.extend([
+        "semantic_lexical_score",
+        "position_score"
+      ])
 
     columns.append("match_score")
 
