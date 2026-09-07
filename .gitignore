@@ -21,6 +21,8 @@ htmlcov/
 # Local model files and downloaded parser assets
 .essays/
 essays/
+.data/
+data/
 temp_essays/
 .models/
 models/
