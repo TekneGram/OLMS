@@ -77,8 +77,10 @@ def main() -> None:
     # Create the BERTScore matrix for all units between responses
     bertScorer = BertScore(clauses_1, clauses_2)
     bert_score_table = bertScorer.create_bert_score_table()
-    tfidfScorer = TFIDFScore(clauses_1, clauses_2)
-    tfidf_score_table = tfidfScorer.create_tfidf_score_table()
+
+
+    # tfidfScorer = TFIDFScore(clauses_1, clauses_2)
+    # tfidf_score_table = tfidfScorer.create_tfidf_score_table()
 
     # With new Organization measure, we likely do *not* need a pair matcher
     # anymore.
@@ -120,87 +122,87 @@ def main() -> None:
 
   # CHECKS HERE
 
-  my_text = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. This statement has a main idea because it clearly states the essay 's main point about wearable devices and why they should be used carefully. It also has an opinion because the writer is taking a stance that these devices have limitations and should be used carefully. The statement previews the content of the essay by mentioning the three main reasons for caution. long term behavior change privacy concerns and stress. The statement is not too complex and is written in clear simple language. The thesis statement is clear and directly states the writer 's main argument. It is well structured and covers the key points the essay will discuss. The writer could improve by making the statement slightly more concise but it is overall a good thesis statement."
-  my_text_2 = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. The thesis statement has a main idea because it states the overall point of the essay that wearable devices should be used carefully. It also expresses an opinion by saying they should be used carefully. The statement previews the content of the essay by mentioning the reasons why they should be used carefully. The statement is not too complex and is written in simple sentences. However it could be more specific. For example it could mention that the essay will discuss how wearable devices can help students but also have problems. The statement is clear and direct but it could be improved to be more concise. The writer should make sure the thesis statement clearly states the main argument and includes the key points that will be discussed in the essay."
+  # my_text = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. This statement has a main idea because it clearly states the essay 's main point about wearable devices and why they should be used carefully. It also has an opinion because the writer is taking a stance that these devices have limitations and should be used carefully. The statement previews the content of the essay by mentioning the three main reasons for caution. long term behavior change privacy concerns and stress. The statement is not too complex and is written in clear simple language. The thesis statement is clear and directly states the writer 's main argument. It is well structured and covers the key points the essay will discuss. The writer could improve by making the statement slightly more concise but it is overall a good thesis statement."
+  # my_text_2 = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. The thesis statement has a main idea because it states the overall point of the essay that wearable devices should be used carefully. It also expresses an opinion by saying they should be used carefully. The statement previews the content of the essay by mentioning the reasons why they should be used carefully. The statement is not too complex and is written in simple sentences. However it could be more specific. For example it could mention that the essay will discuss how wearable devices can help students but also have problems. The statement is clear and direct but it could be improved to be more concise. The writer should make sure the thesis statement clearly states the main argument and includes the key points that will be discussed in the essay."
 
-  deprel = DependencyParser(
-    ".models/udpipe"
-  )
-
-  parsed_1 = deprel.parse("trial", my_text)
-  parsed_2 = deprel.parse("trial_2", my_text_2)
-  splitter_1 = SentenceSplitter(parsed_1)
-  splitter_2 = SentenceSplitter(parsed_2)
-
-  clauses_1_tokens = splitter_1.split_all_tokens()
-  clauses_2_tokens = splitter_2.split_all_tokens()
-
-  clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
-  clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
-
-  # for i, clause in enumerate(clauses_1):
-  #   print(i, clause)
-
-  # for i, clause_tokens in enumerate(clauses_1_tokens):
-  #   for token in sorted(clause_tokens, key=lambda token: token.token_id):
-  #     print(
-  #       token.token_id,
-  #       token.text,
-  #       token.upos,
-  #       token.dependency_relation,
-  #       token.head_token_id
-  #     )
-
-  bertScorer = BertScore(clauses_1, clauses_2)
-  bert_score_table = bertScorer.create_bert_score_table()
-  tfidfScorer = TFIDFScore(clauses_1, clauses_2)
-  tfidf_score_table = tfidfScorer.create_tfidf_score_table()
-
-  # Setting min_score = 0.35 appears to be more inclusive
-  # Setting min_score = 0.3 leads to clause matches that seem a bit weird
-  # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
-  # matcher = PairMatcher(
-  #   score_table=bert_score_table,
-  #   tfidf_score_table=tfidf_score_table,
-  #   min_score=configuration.min_score,
-  #   metric="f1",
-  #   capacity=configuration.capacity
+  # deprel = DependencyParser(
+  #   ".models/udpipe"
   # )
 
-  # clause_pairs = matcher.match()
-  # print(clause_pairs)
+  # parsed_1 = deprel.parse("trial", my_text)
+  # parsed_2 = deprel.parse("trial_2", my_text_2)
+  # splitter_1 = SentenceSplitter(parsed_1)
+  # splitter_2 = SentenceSplitter(parsed_2)
 
-  organization = O(
-    score_table=bert_score_table,
-  )
+  # clauses_1_tokens = splitter_1.split_all_tokens()
+  # clauses_2_tokens = splitter_2.split_all_tokens()
 
-  organization_score = organization.organization_score()
-  print("O Score: ", organization_score)
+  # clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
+  # clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
 
-  lexis = L(
-      text_a = my_text,
-      text_b = my_text_2
-    )
-  # In real implementation, input min of text length of my_text and my_text_2 for text_size
-  # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
-  lexical_similarity_score = lexis.lexical_similarity(text_size=101)
-  print("L Score: ", lexical_similarity_score)
+  # # for i, clause in enumerate(clauses_1):
+  # #   print(i, clause)
 
-  meaning = M(
-    response_1=my_text,
-    response_2=my_text_2
-  )
-  semantics_score = meaning.meaning_similarity()
-  print("M Score: ", semantics_score)
+  # # for i, clause_tokens in enumerate(clauses_1_tokens):
+  # #   for token in sorted(clause_tokens, key=lambda token: token.token_id):
+  # #     print(
+  # #       token.token_id,
+  # #       token.text,
+  # #       token.upos,
+  # #       token.dependency_relation,
+  # #       token.head_token_id
+  # #     )
+
+  # bertScorer = BertScore(clauses_1, clauses_2)
+  # bert_score_table = bertScorer.create_bert_score_table()
+  # tfidfScorer = TFIDFScore(clauses_1, clauses_2)
+  # tfidf_score_table = tfidfScorer.create_tfidf_score_table()
+
+  # # Setting min_score = 0.35 appears to be more inclusive
+  # # Setting min_score = 0.3 leads to clause matches that seem a bit weird
+  # # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
+  # # matcher = PairMatcher(
+  # #   score_table=bert_score_table,
+  # #   tfidf_score_table=tfidf_score_table,
+  # #   min_score=configuration.min_score,
+  # #   metric="f1",
+  # #   capacity=configuration.capacity
+  # # )
+
+  # # clause_pairs = matcher.match()
+  # # print(clause_pairs)
+
+  # organization = O(
+  #   score_table=bert_score_table,
+  # )
+
+  # organization_score = organization.organization_score()
+  # print("O Score: ", organization_score)
+
+  # lexis = L(
+  #     text_a = my_text,
+  #     text_b = my_text_2
+  #   )
+  # # In real implementation, input min of text length of my_text and my_text_2 for text_size
+  # # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
+  # lexical_similarity_score = lexis.lexical_similarity(text_size=101)
+  # print("L Score: ", lexical_similarity_score)
+
+  # meaning = M(
+  #   response_1=my_text,
+  #   response_2=my_text_2
+  # )
+  # semantics_score = meaning.meaning_similarity()
+  # print("M Score: ", semantics_score)
 
   
 
-  structure = S(
-    parsed_a=parsed_1,
-    parsed_b=parsed_2
-  )
-  structural_similarity_score = structure.structure_score()
-  print("S Score: ", structural_similarity_score)
+  # structure = S(
+  #   parsed_a=parsed_1,
+  #   parsed_b=parsed_2
+  # )
+  # structural_similarity_score = structure.structure_score()
+  # print("S Score: ", structural_similarity_score)
 
 
 
