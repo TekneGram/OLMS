@@ -16,7 +16,10 @@ class M:
     """
     Returns the BERTScore between self.response_1 and self.response_2
     """
-    precision, recall, f1 = self.scorer.score((self.response_1), (self.response_2))
+    if not self.response_1.strip() or not self.response_2.strip():
+      raise ValueError("BERTScore meaning similarity requires two non-empty responses.")
+
+    precision, recall, f1 = self.scorer.score([self.response_1], [self.response_2])
     return {
       "precision": precision[0].item(),
       "recall": recall[0].item(),

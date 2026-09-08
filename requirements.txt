@@ -1,6 +1,7 @@
 ufal.udpipe
 bert-score
+transformers<5
 scipy
-sklearn
+scikit-learn
 llama-cpp-python
 tabulate

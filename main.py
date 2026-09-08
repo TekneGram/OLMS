@@ -99,11 +99,9 @@ def main() -> None:
 
     # Run OLMS measures and generate the OLMS vector for these two responses.
     olms_vector = OLMSVector(
-      clause_pairs=clause_pairs,
-      clauses_a=clauses_1,
-      clauses_b=clauses_2,
-      clauses_tokens_a=clauses_1_tokens,
-      clauses_tokens_b=clauses_2_tokens,
+      score_table=bert_score_table,
+      parsed_1=parsed_1,
+      parsed_2=parsed_2,
       response_1=response_1,
       response_2=response_2
     )
@@ -183,17 +181,17 @@ def main() -> None:
   print("L Score: ", lexical_similarity_score)
 
   meaning = M(
-    match_table=clause_pairs
+    response_1=my_text,
+    response_2=my_text_2
   )
-  semantics_score = meaning.semantics_score()
+  semantics_score = meaning.meaning_similarity()
   print("M Score: ", semantics_score)
 
   
 
   structure = S(
-    match_table=clause_pairs,
-    clauses_a_tokens=clauses_1_tokens,
-    clauses_b_tokens=clauses_2_tokens
+    parsed_a=parsed_1,
+    parsed_b=parsed_2
   )
   structural_similarity_score = structure.structure_score()
   print("S Score: ", structural_similarity_score)

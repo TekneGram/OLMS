@@ -1,11 +1,297 @@
-# This script calculates a structural similarity score based on syntactic similarity
+# This script calculates a structural similarity score based on syntactic complexity.
 from collections import Counter
 
 import pandas as pd
 
-from TextProcessing.deprel import DependencyToken
+from TextProcessing.deprel import DependencyParse, DependencyToken
 
 class S:
+  """
+  Syntactic complexity similarity over whole responses.
+  It calculates the following for each response using the parts of speech and dependency relations.
+    - Subordinate clauses types per response:
+      - advcl per response
+      - acl per response
+      - acl:relcl per response
+      - ccomp per response
+      - xcomp per response
+      - csubj per response
+    - Modifier density
+      - adjective-noun per response: amod
+      - adverb-verb/adjective/adverb per response: advmod
+      - noun-noun per response: compound
+      - nominal-postmodifers per response: nmod
+      - appositive modification per response: appos
+    - Predicate complexity
+      - Passive constructions per response: nsubj:pass, aux:pass
+      - core arguments per verb over the response: nsubj, obj,
+    - Tree depth
+      - average token depth across the response
+      - number of embedded clausal nodes across the response
+      - maximum dependency depth
+
+  It uses these to create a feature vector for each response
+  """
+
+  SUBORDINATE_CLAUSE_DEPRELS = (
+    "advcl",
+    "acl",
+    "acl:relcl",
+    "ccomp",
+    "xcomp",
+    "csubj",
+  )
+
+  MODIFIER_DEPRELS = (
+    "amod",
+    "advmod",
+    "compound",
+    "nmod",
+    "appos",
+  )
+
+  PREDICATE_DEPRELS = (
+    "nsubj:pass",
+    "aux:pass",
+    "nsubj",
+    "obj",
+  )
+
+  FEATURE_NAMES = (
+    "advcl_per_sentence",
+    "acl_per_sentence",
+    "acl_relcl_per_sentence",
+    "ccomp_per_sentence",
+    "xcomp_per_sentence",
+    "csubj_per_sentence",
+    "amod_per_noun",
+    "advmod_per_verb_adj_adv",
+    "compound_per_noun",
+    "nmod_per_noun",
+    "appos_per_noun",
+    "nsubj_pass_per_verb",
+    "aux_pass_per_verb",
+    "nsubj_per_verb",
+    "obj_per_verb",
+    "average_token_depth",
+    "embedded_clausal_nodes_per_sentence",
+    "maximum_dependency_depth",
+    "mean_dependency_distance",
+    "maximum_dependency_distance",
+    "long_dependency_rate_ge_5",
+  )
+
+  def __init__(
+      self,
+      parsed_a: DependencyParse,
+      parsed_b: DependencyParse,
+      skip_punct: bool = True,
+      long_dependency_threshold: int = 5,
+  ) -> None:
+    self.parsed_a = parsed_a
+    self.parsed_b = parsed_b
+    self.skip_punct = skip_punct
+    self.long_dependency_threshold = long_dependency_threshold
+
+  def structure_score(self) -> float:
+    """
+    Return feature-wise syntactic complexity similarity over whole responses.
+    """
+    table = self.feature_table()
+
+    if table.empty:
+      return 0.0
+
+    return float(table["similarity"].mean())
+
+  def feature_table(self) -> pd.DataFrame:
+    """
+    Return diagnostics for each normalized syntactic complexity feature.
+    """
+    rates_a = self.feature_rates(self.parsed_a)
+    rates_b = self.feature_rates(self.parsed_b)
+
+    rows = []
+    for feature_name in self.FEATURE_NAMES:
+      value_a = rates_a[feature_name]
+      value_b = rates_b[feature_name]
+      rows.append({
+        "feature": feature_name,
+        "a_value": value_a,
+        "b_value": value_b,
+        "similarity": self._feature_similarity(value_a, value_b),
+      })
+
+    return pd.DataFrame(
+      rows,
+      columns=[
+        "feature",
+        "a_value",
+        "b_value",
+        "similarity",
+      ]
+    )
+
+  def feature_rates(
+      self,
+      parsed: DependencyParse,
+  ) -> dict[str, float]:
+    tokens = self._content_tokens(parsed)
+    token_by_sentence_and_id = {
+      (token.sentence_id, token.token_id): token
+      for token in tokens
+    }
+
+    n_sentences = len({token.sentence_id for token in tokens})
+    n_nouns = sum(
+      token.upos in {"NOUN", "PROPN", "PRON"}
+      for token in tokens
+    )
+    n_verbs = sum(
+      token.upos in {"VERB", "AUX"}
+      for token in tokens
+    )
+    n_eligible_advmod_heads = sum(
+      token.upos in {"VERB", "ADJ", "ADV"}
+      for token in tokens
+    )
+
+    deprel_counts = Counter(
+      token.dependency_relation
+      for token in tokens
+    )
+
+    depths = self._dependency_depths(tokens, token_by_sentence_and_id)
+    distances = self._dependency_distances(tokens)
+    embedded_clausal_nodes = sum(
+      deprel_counts[deprel]
+      for deprel in self.SUBORDINATE_CLAUSE_DEPRELS
+    )
+
+    rates = {
+      "advcl_per_sentence": self._safe_divide(deprel_counts["advcl"], n_sentences),
+      "acl_per_sentence": self._safe_divide(deprel_counts["acl"], n_sentences),
+      "acl_relcl_per_sentence": self._safe_divide(deprel_counts["acl:relcl"], n_sentences),
+      "ccomp_per_sentence": self._safe_divide(deprel_counts["ccomp"], n_sentences),
+      "xcomp_per_sentence": self._safe_divide(deprel_counts["xcomp"], n_sentences),
+      "csubj_per_sentence": self._safe_divide(deprel_counts["csubj"], n_sentences),
+      "amod_per_noun": self._safe_divide(deprel_counts["amod"], n_nouns),
+      "advmod_per_verb_adj_adv": self._safe_divide(deprel_counts["advmod"], n_eligible_advmod_heads),
+      "compound_per_noun": self._safe_divide(deprel_counts["compound"], n_nouns),
+      "nmod_per_noun": self._safe_divide(deprel_counts["nmod"], n_nouns),
+      "appos_per_noun": self._safe_divide(deprel_counts["appos"], n_nouns),
+      "nsubj_pass_per_verb": self._safe_divide(deprel_counts["nsubj:pass"], n_verbs),
+      "aux_pass_per_verb": self._safe_divide(deprel_counts["aux:pass"], n_verbs),
+      "nsubj_per_verb": self._safe_divide(deprel_counts["nsubj"], n_verbs),
+      "obj_per_verb": self._safe_divide(deprel_counts["obj"], n_verbs),
+      "average_token_depth": self._mean(depths),
+      "embedded_clausal_nodes_per_sentence": self._safe_divide(embedded_clausal_nodes, n_sentences),
+      "maximum_dependency_depth": float(max(depths, default=0)),
+      "mean_dependency_distance": self._mean(distances),
+      "maximum_dependency_distance": float(max(distances, default=0)),
+      "long_dependency_rate_ge_5": self._safe_divide(
+        sum(
+          distance >= self.long_dependency_threshold
+          for distance in distances
+        ),
+        len(distances),
+      ),
+    }
+
+    return rates
+
+  def _content_tokens(
+      self,
+      parsed: DependencyParse,
+  ) -> list[DependencyToken]:
+    if not self.skip_punct:
+      return list(parsed.tokens)
+
+    return [
+      token
+      for token in parsed.tokens
+      if token.upos != "PUNCT"
+    ]
+
+  def _dependency_depths(
+      self,
+      tokens: list[DependencyToken],
+      token_by_sentence_and_id: dict[tuple[int, int], DependencyToken],
+  ) -> list[int]:
+    depths = []
+
+    for token in tokens:
+      depth = 0
+      current = token
+      seen = set()
+
+      while (
+          current.head_token_id is not None
+          and (current.sentence_id, current.token_id) not in seen
+      ):
+        seen.add((current.sentence_id, current.token_id))
+        depth += 1
+
+        head = token_by_sentence_and_id.get(
+          (current.sentence_id, current.head_token_id)
+        )
+        if head is None:
+          break
+
+        current = head
+
+      depths.append(depth)
+
+    return depths
+
+  def _dependency_distances(
+      self,
+      tokens: list[DependencyToken],
+  ) -> list[int]:
+    return [
+      abs(token.token_id - token.head_token_id)
+      for token in tokens
+      if token.head_token_id is not None
+    ]
+
+  def _feature_similarity(
+      self,
+      value_a: float,
+      value_b: float,
+  ) -> float:
+    if value_a == 0.0 and value_b == 0.0:
+      return 1.0
+
+    denominator = max(abs(value_a), abs(value_b))
+    if denominator == 0.0:
+      return 0.0
+
+    return 1.0 - abs(value_a - value_b) / denominator
+
+  def _safe_divide(
+      self,
+      numerator: float,
+      denominator: float,
+  ) -> float:
+    if denominator == 0:
+      return 0.0
+
+    return float(numerator / denominator)
+
+  def _mean(
+      self,
+      values: list[int],
+  ) -> float:
+    if not values:
+      return 0.0
+
+    return float(sum(values) / len(values))
+
+
+##################
+
+
+class S_old:
   """
   Structural similarity over semantically matched clause pairs.
 
