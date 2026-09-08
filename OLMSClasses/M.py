@@ -1,8 +1,34 @@
 # This script generates the semantic similarity aggregate score
 # M is for meaning!
 import pandas as pd
+from bert_score import BERTScorer
 
 class M:
+  """
+  Meaning / Similarity over whole language model responses
+  """
+  def __init__(self, response_1: str, response_2: str) -> None:
+    self.response_1 = response_1
+    self.response_2 = response_2
+    self.scorer = BERTScorer(lang="en", rescale_with_baseline=True)
+
+  def meaning_similarity(self) -> dict[str, float]:
+    """
+    Returns the BERTScore between self.response_1 and self.response_2
+    """
+    precision, recall, f1 = self.scorer.score((self.response_1), (self.response_2))
+    return {
+      "precision": precision[0].item(),
+      "recall": recall[0].item(),
+      "f1": f1[0].item()
+    }
+
+  def get_similarity_score(self) -> float:
+    m = self.meaning_similarity()
+    return m["f1"]
+
+
+class M_old:
   """
   Meaning / Semantic similarity over matched clause pairs.
   Implements:
