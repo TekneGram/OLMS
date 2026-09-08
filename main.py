@@ -27,10 +27,12 @@ def main() -> None:
 
   clauses_path = data_dir / f"{data_name}_clauses.md"
   clause_pairs_path = data_dir / f"{data_name}_clause_pairs.md"
+  structure_path = data_dir / f"{data_name}_structure.md"
   olms_vectors_path = data_dir / f"{data_name}_olms_vectors.csv"
 
   clauses_path.write_text("", encoding="utf-8")
   clause_pairs_path.write_text("", encoding="utf-8")
+  structure_path.write_text("", encoding="utf-8")
 
   # Language model - generate feedback on essays.
   fb = EssayFeedback()
@@ -106,6 +108,10 @@ def main() -> None:
       response_2=response_2
     )
     vector = olms_vector.create_olms_vector()
+    olms_vector.structure.append_structure_to_markdown(
+      structure_path,
+      essay_file,
+    )
     vector["essay_file"] = essay_file
     olms_vectors.append(vector)
 

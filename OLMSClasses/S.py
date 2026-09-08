@@ -1,5 +1,6 @@
 # This script calculates a structural similarity score based on syntactic complexity.
 from collections import Counter
+from pathlib import Path
 
 import pandas as pd
 
@@ -167,6 +168,73 @@ class S:
       "total_struct": total_score,
       "struct": float((normalized_score + total_score) / 2.0),
     }
+
+  def response_metadata(
+      self,
+      parsed: DependencyParse,
+  ) -> dict[str, int]:
+    """
+    Return response-size metadata used to interpret structural scores.
+    """
+    tokens = self._content_tokens(parsed)
+
+    return {
+      "sentences": len({token.sentence_id for token in tokens}),
+      "tokens_no_punct": len(tokens),
+      "nouns_pronouns_propn": sum(
+        token.upos in {"NOUN", "PROPN", "PRON"}
+        for token in tokens
+      ),
+      "verbs_aux": sum(
+        token.upos in {"VERB", "AUX"}
+        for token in tokens
+      ),
+    }
+
+  def append_structure_to_markdown(
+      self,
+      output_path: str | Path,
+      filename: str,
+  ) -> None:
+    """
+    Append structure-score diagnostics for one response pair to a markdown file.
+    """
+    output_path = Path(output_path)
+    breakdown = self.score_breakdown()
+    metadata_a = self.response_metadata(self.parsed_a)
+    metadata_b = self.response_metadata(self.parsed_b)
+
+    with output_path.open("a", encoding="utf-8") as file:
+      file.write(f"## Filename: {filename}\n\n")
+
+      file.write("### Structure Scores\n\n")
+      file.write(
+        f"- Normalized structural similarity: {breakdown['normalized_struct']:.6f}\n"
+      )
+      file.write(
+        f"- Total-count structural similarity: {breakdown['total_struct']:.6f}\n"
+      )
+      file.write(
+        f"- Combined structural similarity: {breakdown['struct']:.6f}\n\n"
+      )
+
+      file.write("### Basic Size Difference\n\n")
+      self._write_markdown_table(
+        file,
+        ["Measure", "Response A", "Response B"],
+        [
+          ["Sentences parsed", metadata_a["sentences"], metadata_b["sentences"]],
+          ["Tokens, no punctuation", metadata_a["tokens_no_punct"], metadata_b["tokens_no_punct"]],
+          ["Nouns/pronouns/proper nouns", metadata_a["nouns_pronouns_propn"], metadata_b["nouns_pronouns_propn"]],
+          ["Verbs/auxiliaries", metadata_a["verbs_aux"], metadata_b["verbs_aux"]],
+        ],
+      )
+
+      file.write("### Normalized Score\n\n")
+      self._write_feature_table(file, self.feature_table())
+
+      file.write("### Total-Count Score\n\n")
+      self._write_feature_table(file, self.total_feature_table())
 
   def feature_table(self) -> pd.DataFrame:
     """
@@ -429,6 +497,45 @@ class S:
       return 0.0
 
     return float(sum(values) / len(values))
+
+  def _write_feature_table(
+      self,
+      file,
+      table: pd.DataFrame,
+  ) -> None:
+    rows = [
+      [
+        row["feature"],
+        f"{row['a_value']:.6f}",
+        f"{row['b_value']:.6f}",
+        f"{row['similarity']:.6f}",
+      ]
+      for _, row in table.iterrows()
+    ]
+
+    self._write_markdown_table(
+      file,
+      ["Feature", "A", "B", "Similarity"],
+      rows,
+    )
+
+  def _write_markdown_table(
+      self,
+      file,
+      headers: list[str],
+      rows: list[list[object]],
+  ) -> None:
+    file.write("| " + " | ".join(headers) + " |\n")
+    file.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
+
+    for row in rows:
+      file.write(
+        "| "
+        + " | ".join(str(value) for value in row)
+        + " |\n"
+      )
+
+    file.write("\n")
 
 
 ##################
