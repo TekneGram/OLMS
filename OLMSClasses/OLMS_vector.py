@@ -7,7 +7,8 @@ from TextProcessing.deprel import DependencyToken
 
 class OLMSVector:
   def __init__(
-      self, 
+      self,
+      score_table:pd.DataFrame, 
       clause_pairs: pd.DataFrame, 
       clauses_a: list[str],
       clauses_b: list[str],
@@ -16,10 +17,9 @@ class OLMSVector:
       response_1: str, 
       response_2: str
       ) -> None:
+    
     self.organization = O(
-      match_table=clause_pairs,
-      n_clauses_a=len(clauses_a),
-      n_clauses_b=len(clauses_b)
+      score_table=score_table,
     )
 
     self.lexis = L(

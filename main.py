@@ -96,6 +96,8 @@ def main() -> None:
     #   clause_pairs
     # )
     # Loop through all essay feedback
+
+    # Run OLMS measures and generate the OLMS vector for these two responses.
     olms_vector = OLMSVector(
       clause_pairs=clause_pairs,
       clauses_a=clauses_1,
@@ -153,21 +155,19 @@ def main() -> None:
   # Setting min_score = 0.35 appears to be more inclusive
   # Setting min_score = 0.3 leads to clause matches that seem a bit weird
   # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
-  matcher = PairMatcher(
-    score_table=bert_score_table,
-    tfidf_score_table=tfidf_score_table,
-    min_score=configuration.min_score,
-    metric="f1",
-    capacity=configuration.capacity
-  )
+  # matcher = PairMatcher(
+  #   score_table=bert_score_table,
+  #   tfidf_score_table=tfidf_score_table,
+  #   min_score=configuration.min_score,
+  #   metric="f1",
+  #   capacity=configuration.capacity
+  # )
 
-  clause_pairs = matcher.match()
-  print(clause_pairs)
+  # clause_pairs = matcher.match()
+  # print(clause_pairs)
 
   organization = O(
-    match_table=clause_pairs,
-    n_clauses_a=len(clauses_1),
-    n_clauses_b=len(clauses_2)
+    score_table=bert_score_table,
   )
 
   organization_score = organization.organization_score()
