@@ -1,126 +1,145 @@
-from SLM.slm import SLM
-import configuration
 import csv
+import hashlib
+import json
 from pathlib import Path
+from SLM.slm import SLM
+from typing import Any
+
+import configuration
+from experiment_data import (
+  RESPONSE_COLUMNS, append_csv_row, metadata_path, read_responses, write_metadata,
+)
+
 
 class EssayFeedback:
-  def __init__(self) -> None:
-    self.llm = SLM()
-    return
+  """Collect repeated feedback and checkpoint each response before continuing."""
 
-  def generate_essay_feedback(self, prompts: list[str], system_content: str | None = None) -> list[str]:
+  def __init__(self, llm=None) -> None:
+    self.llm = llm
 
-    if system_content:
-      self.llm.set_system_content(system_content)
 
-    responses = []
-    for prompt in prompts:
-      responses.append(self.llm.run_inference(prompt))
+  def _model(self) -> SLM:
+    if self.llm is None:
+      self.llm = SLM()
+    return self.llm
 
-    return responses
 
-  def generate_multiple_feedback(self, output_filename: str | None = None) -> list[dict[str, object]]:
-    # Loop through all the files in the essay path provided by configuration
-    essays_path = Path(configuration.essays_path)
+  def generate_essay_feedback(
+        self, 
+        prompts: list[str], 
+        system_content: str | None = None
+    ) -> list[str]:
+      model = self._model()
+      if system_content:
+        model.set_system_content(system_content)
+      return [model.run_inference(prompt) for prompt in prompts]
 
-    if not essays_path.exists():
-      raise FileNotFoundError(f"Essay folder does not exist: {essays_path}")
+  # Loads essays
+  # Validates / resume-checks metadata
+  # Writes metadata with complete: False
+  # Builds system report
+  # Selects essay + prompt + repetition index
+  # skips row if it already exists during --resume
+  # set the model's system content
+  # computes the deterministic seed
+  # Hashes ensure that any changes to essays will start a new experiment so that experiments don't get muddled up.
+  def generate_multiple_feedback(
+          self, 
+          output_filename: str | None = None, 
+          repeats: int =10, 
+          *,
+          output_path: Path | str | None = None,
+          essays_path: Path | str | None = None,
+          resume: bool = False
+    ) -> list[dict[str, Any]]:
+      if not isinstance(repeats, int) or repeats < 2:
+        raise ValueError("repeats must be an integer of at least two.")
 
-    if not essays_path.is_dir():
-      raise NotADirectoryError(f"Essay path is not a folder: {essays_path}")
+      folder = Path(essays_path or configuration.essays_path)
+      if not folder.is_dir():
+        raise NotADirectoryError(f"Essay folder does not exist: {folder}")
 
-    system_content = (
-      configuration.ai_role
-      + configuration.ai_task_main
-      + "".join(configuration.ai_knowledge)
-    )
+      essays = {p.name: p.read_text(encoding="utf-8").strip() for p in sorted(folder.glob("*.md"))}
+      if not essays or any(not text for text in essays.values()):
+        raise ValueError("Essay folder must contain nonempty .md essays.")
 
-    all_feedback = []
+      if output_path is None:
+        name = Path(output_filename or "feedback_data")
+        if name.name != str(name):
+          raise ValueError("output_filename must be a filename; use output_path for paths.")
+        output_path = Path("data") / name.with_suffix(".csv")
 
-    for essay_file in essays_path.glob("*.md"):
-      essay = essay_file.read_text(encoding="utf-8").strip()
+      path = Path(output_path)
+      path.parent.mkdir(parents=True, exist_ok=True)
+      settings = {name: getattr(configuration, name) for name in [
+        "llm_path", "n_ctx", "n_threads", "n_gpu_layers", "seed", "max_tokens",
+        "temperature", "top_p", "stream", "ai_role", "ai_task_main", "ai_knowledge",
+        "ai_task_description", "ai_recipient_information_1", "ai_recipient_information_2",
+      ]}
+      settings = json.loads(json.dumps(settings))
+      hashes = {name: hashlib.sha256(text.encode("utf-8")).hexdigest() for name, text in essays.items()}
+      metadata = {"schema_version": 1, "repeats": repeats, "settings": settings,
+                  "essay_hashes": hashes, "complete": False,
+                  "seed_policy": "first 32 bits of sha256(JSON [base_seed, essay_filename, prompt, repetition])"}
 
-      prompt_1 = configuration.ai_task_description + essay + "\n\n" + configuration.ai_recipient_information_1
-      prompt_2 = configuration.ai_task_description + essay + "\n\n" + configuration.ai_recipient_information_2
-      prompts = [prompt_1, prompt_2]
-      responses = self.generate_essay_feedback(prompts, system_content)
+      existing = []
+      if path.exists():
+        if not resume:
+          raise FileExistsError(f"Responses already exist: {path}. Use --resume or a new --output path.")
 
-      all_feedback.append({
-        "essay_file": essay_file.name,
-        "responses": responses
-      })
+        previous = json.loads(metadata_path(path).read_text(encoding="utf-8"))
 
-    if output_filename:
-      self._save_feedback_to_csv(all_feedback, output_filename)
-      self._save_metadata(output_filename)
+        if any(previous.get(key) != metadata[key] for key in ["schema_version", "repeats", "settings", "seed_policy"]):
+          raise ValueError("Response settings changed; use a new output file for a new experiment.")
 
-    return all_feedback
+        if any(hashes.get(name) != digest for name, digest in previous["essay_hashes"].items()):
+          raise ValueError("Previously collected essays were changed or removed. Use a new output file.")
 
-  def _output_filename_to_path(self, output_filename: str) -> Path:
-    output_path = Path(output_filename)
+        existing = read_responses(path, complete=False, expected_count=repeats)
 
-    if output_path.name != output_filename:
-      raise ValueError("output_filename must be a filename only, not a path.")
+        if any(row["essay_file"] not in previous["essay_hashes"] for row in existing):
+          raise ValueError("Response CSV contains essays absent from its metadata.")
 
-    return output_path
+      elif resume:
+        raise FileNotFoundError(f"Cannot resume missing responses: {path}")
 
-  def _save_feedback_to_csv(self, all_feedback: list[dict[str, object]], output_filename: str) -> Path:
-    output_path = self._output_filename_to_path(output_filename)
+      completed = {(r["essay_file"], r["prompt"], r["response_index"]) for r in existing}
+      write_metadata(metadata_path(path), metadata)
 
-    if output_path.suffix != ".csv":
-      output_path = output_path.with_suffix(".csv")
+      system = configuration.ai_role + configuration.ai_task_main + "".join(configuration.ai_knowledge)
+      recipients = {"A": configuration.ai_recipient_information_1, "B": configuration.ai_recipient_information_2}
+      fresh = not path.exists()
 
-    data_dir = Path("data")
-    data_dir.mkdir(exist_ok=True)
-    output_path = data_dir / output_path
+      with path.open("x" if fresh else "a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=RESPONSE_COLUMNS)
+        if fresh:
+          writer.writeheader()
+          handle.flush()
+        for essay_name, essay in essays.items():
+          for prompt, recipient in recipients.items():
+            request = configuration.ai_task_description + essay + "\n\n" + recipient
+            for index in range(1, repeats + 1):
+              if (essay_name, prompt, index) in completed:
+                continue
 
-    rows = []
+              # Get the model
+              model = self._model()
+              model.set_system_content(system)
+              seed_text = json.dumps([configuration.seed, essay_name, prompt, index])
+              seed = int.from_bytes(hashlib.sha256(seed_text.encode()).digest()[:4], "big")
 
-    for essay_feedback in all_feedback:
-      essay_file = essay_feedback["essay_file"]
-      responses = essay_feedback["responses"]
+              # Run inference!
+              response = model.run_inference(request, seed=seed)
 
-      for response_index, response in enumerate(responses, start=1):
-        rows.append({
-          "essay_file": essay_file,
-          "response_index": response_index,
-          "response": response
-        })
+              if not isinstance(response, str) or not response.strip():
+                raise ValueError(f"Empty response for {essay_name}, {prompt}, {index}.")
 
-    with output_path.open("w", encoding="utf-8", newline="") as csv_file:
-      writer = csv.DictWriter(
-        csv_file,
-        fieldnames=[
-          "essay_file",
-          "response_index",
-          "response"
-        ]
-      )
-      writer.writeheader()
-      writer.writerows(rows)
+              row = {"essay_file": essay_name, "prompt": prompt,
+                      "response_index": index, "response": response.strip()}
+              append_csv_row(handle, writer, row)
+              existing.append(row)
+              print(f"Saved {essay_name}: prompt {prompt}, response {index}/{repeats}", flush=True)
 
-    return output_path
-
-  def _save_metadata(self, output_filename: str) -> Path:
-    output_path = self._output_filename_to_path(output_filename)
-
-    data_dir = Path("data")
-    data_dir.mkdir(exist_ok=True)
-    metadata_path = data_dir / f"{output_path.stem}_metadata.txt"
-
-    metadata = {
-      "essays_path": configuration.essays_path,
-      "ai_role": configuration.ai_role,
-      "ai_task_main": configuration.ai_task_main,
-      "ai_knowledge": "".join(configuration.ai_knowledge),
-      "ai_task_description": configuration.ai_task_description,
-      "ai_recipient_information_1": configuration.ai_recipient_information_1,
-      "ai_recipient_information_2": configuration.ai_recipient_information_2
-    }
-
-    with metadata_path.open("w", encoding="utf-8") as metadata_file:
-      for key, value in metadata.items():
-        metadata_file.write(f"{key}:\n")
-        metadata_file.write(f"{value}\n\n")
-
-    return metadata_path
+      metadata["complete"] = True
+      write_metadata(metadata_path(path), metadata)
+      return existing

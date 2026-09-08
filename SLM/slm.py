@@ -27,7 +27,7 @@ class SLM:
     )
     return llm
 
-  def run_inference(self, user_request) -> str:
+  def run_inference(self, user_request, seed=None) -> str:
     system_messages = [
       {
         "role": "system",
@@ -48,18 +48,22 @@ class SLM:
       temperature=configuration.temperature,
       top_p=configuration.top_p,
       stream=configuration.stream,
+      seed=seed,
       #response_format=configuration.ai_response_format
     )
 
     tutor_message = ""
 
-    for chunk in response:
-      delta = chunk["choices"][0].get("delta", {})
-      content = delta.get("content", "")
+    if configuration.stream:
+      for chunk in response:
+        delta = chunk["choices"][0].get("delta", {})
+        content = delta.get("content", "")
 
-      if content:
-        print(content, end="", flush=True)
-        tutor_message += content
+        if content:
+          print(content, end="", flush=True)
+          tutor_message += content
+    else:
+      tutor_message = response["choices"][0]["message"].get("content") or ""
 
     print()
 
