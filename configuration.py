@@ -21,7 +21,7 @@ stream=True
 # ---------------------
 # Clause Pair-Matcher
 # ---------------------
-capacity=2
+capacity=1
 min_score=0.4
 
 # ---------------------
@@ -30,7 +30,7 @@ min_score=0.4
 essays_path = ".essays/"
 # System Prompt
 ai_role = "You are a tutor for English as a foreign language students. "
-#ai_task_main = "You will read an essay and provide evaluation of the essay's thesis statement. Provide plain text feedback in JSON format, no markdown: {'main_idea': '...', 'opinion': '...', 'preview': '...', 'length': '...', 'advice': '...'}"
+#ai_task_main = "You will read an essay and provide evaluation of the essay's thesis statement. Provide JSON format, no markdown: {'main_idea': '...', 'opinion': '...', 'preview': '...', 'length': '...', 'advice': '...'}"
 ai_task_main = "You will read an essay and provide evaluation of the essay's thesis statement. Provide plain text feedback in full sentences with sentence punctuation. No markdown, no bullet points, no colons."
 ai_knowledge = (
   "The thesis statement is part of the introduction. It often comes towards the end of the introduction. A good thesis statement has some of the following properties: \n",
@@ -41,7 +41,7 @@ ai_knowledge = (
   )
 ai_task_description = "Evaluate the properties of the writer's thesis statement in the essay provided by the student: \n\n"
 
-ai_recipient_information_1 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence. Use simple sentences and words because the student is CEFR B1 level."
+ai_recipient_information_1 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence."
 ai_recipient_information_2 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence."
 
 ai_response_format = {

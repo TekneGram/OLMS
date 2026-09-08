@@ -20,6 +20,7 @@ from SLM.slm import SLM
 
 def main() -> None:
 
+  # Set up file names and data saving paths.
   data_name = "feedback_data"
   data_dir = Path("data")
   data_dir.mkdir(exist_ok=True)
@@ -31,12 +32,15 @@ def main() -> None:
   clauses_path.write_text("", encoding="utf-8")
   clause_pairs_path.write_text("", encoding="utf-8")
 
+  # Language model - generate feedback on essays.
   fb = EssayFeedback()
   all_feedback = fb.generate_multiple_feedback(output_filename=data_name)
 
+  # Prepare dependency parser and object to accept results
   deprel = DependencyParser(".models/udpipe")
   olms_vectors = []
 
+  # Loop through all the feedback generated
   for feedback in all_feedback:
     essay_file = feedback["essay_file"]
     responses = feedback["responses"]
@@ -44,18 +48,22 @@ def main() -> None:
     if len(responses) < 2:
       raise ValueError(f"Expected at least 2 responses for {essay_file}")
 
+    # Retrieve language model responses
     response_1 = responses[0]
     response_2 = responses[1]
 
+    # Parse them for parts of speech and dependency relations with udpipe
     parsed_1 = deprel.parse(f"{essay_file}_response_1", response_1)
     parsed_2 = deprel.parse(f"{essay_file}_response_2", response_2)
-    splitter_1 = ClauseSplitter(parsed_1)
-    splitter_2 = ClauseSplitter(parsed_2)
-    clauses_1_tokens = splitter_1.split_all_tokens_strict()
-    clauses_2_tokens = splitter_2.split_all_tokens_strict()
+
+    # Split responses into units (clauses or sentences)
+    splitter_1 = SentenceSplitter(parsed_1)
+    splitter_2 = SentenceSplitter(parsed_2)
+    clauses_1_tokens = splitter_1.split_all_tokens()
+    clauses_2_tokens = splitter_2.split_all_tokens()
     clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
     clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
-    ClauseSplitter.append_clause_sets_to_markdown(
+    SentenceSplitter.append_clause_sets_to_markdown(
       clauses_path,
       essay_file,
       {
@@ -63,23 +71,30 @@ def main() -> None:
         "Response B Clauses": clauses_2
       }
     )
+
+    # Create the BERTScore matrix for all units between responses
     bertScorer = BertScore(clauses_1, clauses_2)
     bert_score_table = bertScorer.create_bert_score_table()
     tfidfScorer = TFIDFScore(clauses_1, clauses_2)
     tfidf_score_table = tfidfScorer.create_tfidf_score_table()
-    matcher = PairMatcher(
-      score_table=bert_score_table,
-      tfidf_score_table=tfidf_score_table,
-      min_score=configuration.min_score,
-      metric="f1",
-      capacity=configuration.capacity
-    )
-    clause_pairs = matcher.match()
-    matcher.append_matches_to_markdown(
-      clause_pairs_path,
-      essay_file,
-      clause_pairs
-    )
+
+    # With new Organization measure, we likely do *not* need a pair matcher
+    # anymore.
+    # matcher = PairMatcher(
+    #   score_table=bert_score_table,
+    #   tfidf_score_table=tfidf_score_table,
+    #   min_score=configuration.min_score,
+    #   metric="f1",
+    #   capacity=configuration.capacity,
+    #   use_position_bias=True,
+    #   position_weight=0.15,
+    # )
+    # clause_pairs = matcher.match()
+    # matcher.append_matches_to_markdown(
+    #   clause_pairs_path,
+    #   essay_file,
+    #   clause_pairs
+    # )
     # Loop through all essay feedback
     olms_vector = OLMSVector(
       clause_pairs=clause_pairs,
