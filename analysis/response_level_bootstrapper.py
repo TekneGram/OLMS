@@ -1,0 +1,64 @@
+import numpy as np
+import pandas as pd
+
+from analysis.prompt_shift_analyzer import PromptShiftAnalyzer
+from analysis.vector_centroid_transformer import VectorCentroidTransformer
+from analysis.vector_distance_transformer import VectorDistanceTransformer
+
+
+class ResponseLevelBootstrapper:
+  """Resample response IDs; cached pair scores retain duplicate multiplicities."""
+
+  def __init__(self, replicates=5000, seed=42):
+    if not isinstance(replicates, int) or replicates < 1:
+      raise ValueError("Bootstrap replicates must be a positive integer.")
+    if not isinstance(seed, int) or seed < 0:
+      raise ValueError("Bootstrap seed must be a nonnegative integer.")
+    self.replicates = replicates
+    self.seed = seed
+
+  def run(self, table):
+    rng = np.random.default_rng(self.seed)
+    within, shifts = [], []
+    count = table.response_count
+    left, right = np.triu_indices(count, k=1)
+    # Bound temporary pair arrays even when the requested replicate count is large.
+    for essay in table.essays:
+      matrices = table.matrices(essay)
+      for start in range(0, self.replicates, 250):
+        size = min(250, self.replicates - start)
+        samples = {p: rng.integers(0, count, size=(size, count)) for p in ["A", "B"]}
+        centroids = {}
+        replicate_ids = np.arange(start + 1, start + size + 1)
+
+        for prompt in ["A", "B"]:
+          sample = samples[prompt]
+          pairs = matrices[prompt * 2][sample[:, left], sample[:, right]]
+          centroid = VectorCentroidTransformer.transform(pairs)
+          centroids[prompt] = centroid
+          distance = VectorDistanceTransformer.transform(pairs, centroid).mean(axis=1)
+          data = {"essay_file": essay, "prompt": prompt,
+                  "replicate": replicate_ids, "mean_distance": distance}
+
+          for i, component in enumerate(table.COMPONENTS):
+            data[f"{component}_mean"] = centroid[:, i]
+          within.append(pd.DataFrame(data))
+
+        ab = matrices["AB"][samples["A"][:, :, None], samples["B"][:, None, :]]
+        centroid_ab = VectorCentroidTransformer.transform(ab.reshape(size, count * count, 4))
+        _, delta, magnitude = PromptShiftAnalyzer.contrast(centroids["A"], centroids["B"], centroid_ab)
+        data = {"essay_file": essay, "replicate": replicate_ids, "magnitude": magnitude}
+
+        for i, component in enumerate(table.COMPONENTS):
+          data[f"delta_{component}"] = delta[:, i]
+        shifts.append(pd.DataFrame(data))
+
+    shift_frame = pd.concat(shifts, ignore_index=True)
+    metrics = ["magnitude"] + [f"delta_{c}" for c in table.COMPONENTS]
+    overall = shift_frame.groupby("replicate", as_index=False)[metrics].mean()
+
+    return {
+        "within_bootstrap": pd.concat(within, ignore_index=True),
+        "prompt_shift_bootstrap": shift_frame,
+        "overall_prompt_shift_bootstrap": overall,
+    }

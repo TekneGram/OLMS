@@ -1,214 +1,155 @@
-from TextProcessing.deprel import DependencyParser
-from TextProcessing.clause_splitter import ClauseSplitter
-from TextProcessing.bertscorer import BertScore
-from TextProcessing.tf_idf_scorer import TFIDFScore
-from TextProcessing.pair_matcher import PairMatcher
-from TextProcessing.sentence_splitter import SentenceSplitter
-from OLMSClasses.O import O
-from OLMSClasses.L import L
-from OLMSClasses.M import M
-from OLMSClasses.S import S
+"""Independent terminal stages for the OLMS stability pilot."""
 
-from OLMSClasses.OLMS_vector import OLMSVector
-
-import configuration
-import pandas as pd
+import argparse
+import json
+from datetime import datetime, timezone
 from pathlib import Path
-from SLM.essay_feedback import EssayFeedback
 
-from SLM.slm import SLM
-
-def main() -> None:
-
-  # Set up file names and data saving paths.
-  data_name = "feedback_data"
-  data_dir = Path("data")
-  data_dir.mkdir(exist_ok=True)
-
-  clauses_path = data_dir / f"{data_name}_clauses.md"
-  clause_pairs_path = data_dir / f"{data_name}_clause_pairs.md"
-  structure_path = data_dir / f"{data_name}_structure.md"
-  olms_vectors_path = data_dir / f"{data_name}_olms_vectors.csv"
-
-  clauses_path.write_text("", encoding="utf-8")
-  clause_pairs_path.write_text("", encoding="utf-8")
-  structure_path.write_text("", encoding="utf-8")
-
-  # Language model - generate feedback on essays.
-  fb = EssayFeedback()
-  all_feedback = fb.generate_multiple_feedback(output_filename=data_name)
-
-  # Prepare dependency parser and object to accept results
-  deprel = DependencyParser(".models/udpipe")
-  olms_vectors = []
-
-  # Loop through all the feedback generated
-  for feedback in all_feedback:
-    essay_file = feedback["essay_file"]
-    responses = feedback["responses"]
-
-    if len(responses) < 2:
-      raise ValueError(f"Expected at least 2 responses for {essay_file}")
-
-    # Retrieve language model responses
-    response_1 = responses[0]
-    response_2 = responses[1]
-
-    # Parse them for parts of speech and dependency relations with udpipe
-    parsed_1 = deprel.parse(f"{essay_file}_response_1", response_1)
-    parsed_2 = deprel.parse(f"{essay_file}_response_2", response_2)
-
-    # Split responses into units (clauses or sentences)
-    splitter_1 = SentenceSplitter(parsed_1)
-    splitter_2 = SentenceSplitter(parsed_2)
-    clauses_1_tokens = splitter_1.split_all_tokens()
-    clauses_2_tokens = splitter_2.split_all_tokens()
-    clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
-    clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
-    SentenceSplitter.append_clause_sets_to_markdown(
-      clauses_path,
-      essay_file,
-      {
-        "Response A Clauses": clauses_1,
-        "Response B Clauses": clauses_2
-      }
-    )
-
-    # Create the BERTScore matrix for all units between responses
-    bertScorer = BertScore(clauses_1, clauses_2)
-    bert_score_table = bertScorer.create_bert_score_table()
+from experiment_data import file_digest, metadata_path
 
 
-    # tfidfScorer = TFIDFScore(clauses_1, clauses_2)
-    # tfidf_score_table = tfidfScorer.create_tfidf_score_table()
+def collect_responses(args):
+  from SLM.essay_feedback import EssayFeedback
 
-    # With new Organization measure, we likely do *not* need a pair matcher
-    # anymore.
-    # matcher = PairMatcher(
-    #   score_table=bert_score_table,
-    #   tfidf_score_table=tfidf_score_table,
-    #   min_score=configuration.min_score,
-    #   metric="f1",
-    #   capacity=configuration.capacity,
-    #   use_position_bias=True,
-    #   position_weight=0.15,
-    # )
-    # clause_pairs = matcher.match()
-    # matcher.append_matches_to_markdown(
-    #   clause_pairs_path,
-    #   essay_file,
-    #   clause_pairs
-    # )
-    # Loop through all essay feedback
+  rows = EssayFeedback().generate_multiple_feedback(
+    output_path=args.output, essays_path=args.essays,
+    repeats=args.repeats, resume=args.resume
+  )
 
-    # Run OLMS measures and generate the OLMS vector for these two responses.
-    olms_vector = OLMSVector(
-      score_table=bert_score_table,
-      parsed_1=parsed_1,
-      parsed_2=parsed_2,
-      response_1=response_1,
-      response_2=response_2
-    )
-    vector = olms_vector.create_olms_vector()
-    olms_vector.structure.append_structure_to_markdown(
-      structure_path,
-      essay_file,
-    )
-    vector["essay_file"] = essay_file
-    olms_vectors.append(vector)
+  print(f"Saved {len(rows)} responses to {args.output}")
 
-  pd.DataFrame(olms_vectors).to_csv(olms_vectors_path, index=False)
-  print(olms_vectors)
 
-  # CHECKS HERE
+def calculate_vectors(args):
+  from vector_generation import generate_vectors
 
-  # my_text = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. This statement has a main idea because it clearly states the essay 's main point about wearable devices and why they should be used carefully. It also has an opinion because the writer is taking a stance that these devices have limitations and should be used carefully. The statement previews the content of the essay by mentioning the three main reasons for caution. long term behavior change privacy concerns and stress. The statement is not too complex and is written in clear simple language. The thesis statement is clear and directly states the writer 's main argument. It is well structured and covers the key points the essay will discuss. The writer could improve by making the statement slightly more concise but it is overall a good thesis statement."
-  # my_text_2 = "The thesis statement in the introduction is Although wearable fitness devices can help students become more aware of their sleep and exercise habits this essay argues that they should be used carefully because their benefits are limited by weak long term behavior change privacy concerns and possible stress. The thesis statement has a main idea because it states the overall point of the essay that wearable devices should be used carefully. It also expresses an opinion by saying they should be used carefully. The statement previews the content of the essay by mentioning the reasons why they should be used carefully. The statement is not too complex and is written in simple sentences. However it could be more specific. For example it could mention that the essay will discuss how wearable devices can help students but also have problems. The statement is clear and direct but it could be improved to be more concise. The writer should make sure the thesis statement clearly states the main argument and includes the key points that will be discussed in the essay."
+  output = generate_vectors(args.responses, args.output, resume=args.resume,
+                            parser_dir=args.parser_dir, diagnostics=args.diagnostics)
+  print(f"Saved OLMS vectors to {output}")
 
-  # deprel = DependencyParser(
-  #   ".models/udpipe"
-  # )
 
-  # parsed_1 = deprel.parse("trial", my_text)
-  # parsed_2 = deprel.parse("trial_2", my_text_2)
-  # splitter_1 = SentenceSplitter(parsed_1)
-  # splitter_2 = SentenceSplitter(parsed_2)
+def analyze_vectors(args):
+  from analysis.analysis_writer import AnalysisWriter
+  from analysis.between_essay_stability_analyzer import BetweenEssayStabilityAnalyzer
+  from analysis.bootstrap_confidence_interval import BootstrapConfidenceInterval
+  from analysis.hotelling_t2_test import HotellingT2Test
+  from analysis.olms_vector_table import OLMSVectorTable
+  from analysis.prompt_shift_analyzer import PromptShiftAnalyzer
+  from analysis.response_level_bootstrapper import ResponseLevelBootstrapper
+  from analysis.within_essay_stability_analyzer import WithinEssayStabilityAnalyzer
 
-  # clauses_1_tokens = splitter_1.split_all_tokens()
-  # clauses_2_tokens = splitter_2.split_all_tokens()
+  # Load the OLMSVector CSV and validate
+  table = OLMSVectorTable(args.vectors)
+  source_metadata = None
+  if metadata_path(args.vectors).exists():
+    source_metadata = json.loads(metadata_path(args.vectors).read_text(encoding="utf-8"))
+    if not source_metadata.get("complete"):
+      raise ValueError("Vector generation is incomplete. Resume the vectors command first.")
+    if set(table.essays) != set(source_metadata["essay_files"]):
+      raise ValueError("Vector CSV does not contain all essays recorded in its metadata.")
+    if table.response_count != source_metadata["response_count"]:
+      raise ValueError("Vector response count differs from its metadata.")
 
-  # clauses_1 = [splitter_1.token_text(clause) for clause in clauses_1_tokens]
-  # clauses_2 = [splitter_2.token_text(clause) for clause in clauses_2_tokens]
-
-  # # for i, clause in enumerate(clauses_1):
-  # #   print(i, clause)
-
-  # # for i, clause_tokens in enumerate(clauses_1_tokens):
-  # #   for token in sorted(clause_tokens, key=lambda token: token.token_id):
-  # #     print(
-  # #       token.token_id,
-  # #       token.text,
-  # #       token.upos,
-  # #       token.dependency_relation,
-  # #       token.head_token_id
-  # #     )
-
-  # bertScorer = BertScore(clauses_1, clauses_2)
-  # bert_score_table = bertScorer.create_bert_score_table()
-  # tfidfScorer = TFIDFScore(clauses_1, clauses_2)
-  # tfidf_score_table = tfidfScorer.create_tfidf_score_table()
-
-  # # Setting min_score = 0.35 appears to be more inclusive
-  # # Setting min_score = 0.3 leads to clause matches that seem a bit weird
-  # # Setting min_score = 0.5 possibly drops some meaningful matches, but OLMS scores are higher
-  # # matcher = PairMatcher(
-  # #   score_table=bert_score_table,
-  # #   tfidf_score_table=tfidf_score_table,
-  # #   min_score=configuration.min_score,
-  # #   metric="f1",
-  # #   capacity=configuration.capacity
-  # # )
-
-  # # clause_pairs = matcher.match()
-  # # print(clause_pairs)
-
-  # organization = O(
-  #   score_table=bert_score_table,
-  # )
-
-  # organization_score = organization.organization_score()
-  # print("O Score: ", organization_score)
-
-  # lexis = L(
-  #     text_a = my_text,
-  #     text_b = my_text_2
-  #   )
-  # # In real implementation, input min of text length of my_text and my_text_2 for text_size
-  # # This will lead to the lexical similarity choosing between mtld and mattr (not sure if this approach is valid though)
-  # lexical_similarity_score = lexis.lexical_similarity(text_size=101)
-  # print("L Score: ", lexical_similarity_score)
-
-  # meaning = M(
-  #   response_1=my_text,
-  #   response_2=my_text_2
-  # )
-  # semantics_score = meaning.meaning_similarity()
-  # print("M Score: ", semantics_score)
+  # Create helper objects
+  intervals = BootstrapConfidenceInterval(args.confidence)
+  bootstrapper = ResponseLevelBootstrapper(args.bootstrap_replicates, args.seed)
+  writer = AnalysisWriter(args.output)
 
   
+  within, distances = WithinEssayStabilityAnalyzer().analyze(table)
+  between = BetweenEssayStabilityAnalyzer().analyze(within)
+  shifts, overall = PromptShiftAnalyzer().analyze(table)
+  print(f"Bootstrapping {len(table.essays)} essays, {args.bootstrap_replicates} replicates each...", flush=True)
+  bootstrap = bootstrapper.run(table)
+  within_metrics = ["mean_distance"] + [f"{c}_mean" for c in table.COMPONENTS]
+  shift_components = [f"delta_{c}" for c in table.COMPONENTS]
+  shift_metrics = ["magnitude"] + shift_components
+  tables = {
+    "within_essay_stability": within,
+    "within_essay_intervals": intervals.table(
+      bootstrap["within_bootstrap"], ["essay_file", "prompt"], within_metrics),
+    "between_essay_stability": between,
+    "prompt_shift": shifts,
+    "prompt_shift_intervals": intervals.table(
+      bootstrap["prompt_shift_bootstrap"], ["essay_file"], shift_metrics),
+    "overall_prompt_shift": overall,
+    "overall_prompt_shift_intervals": intervals.table(
+      bootstrap["overall_prompt_shift_bootstrap"], [], shift_metrics, shift_components),
+  }
+  hotelling = HotellingT2Test().run(shifts[shift_components].to_numpy(dtype=float))
+  metadata = {
+      "created_at": datetime.now(timezone.utc).isoformat(),
+      "vector_file": str(Path(args.vectors).resolve()), "vector_sha256": file_digest(args.vectors),
+      "essay_count": len(table.essays), "essay_files": table.essays,
+      "response_count": table.response_count, "components": table.COMPONENTS,
+      "bootstrap_replicates": args.bootstrap_replicates, "seed": args.seed,
+      "confidence": args.confidence, "bootstrap_unit": "response within essay and prompt",
+      "essay_resampling": False, "component_scaling": "none", "distance": "euclidean",
+      "sd_ddof": 1, "source_metadata": source_metadata,
+  }
+  for name, frame in tables.items():
+      writer.write_table(name, frame)
+  writer.write_table("vector_distances", distances)
+  for name, frame in bootstrap.items():
+      writer.write_table(name, frame, compressed=True)
+  writer.write_json("hotelling_t2", hotelling)
+  writer.write_json("metadata", metadata)
+  report = writer.write_report(tables, hotelling, metadata)
+  print(f"Saved analysis to {args.output}; report: {report}")
 
-  # structure = S(
-  #   parsed_a=parsed_1,
-  #   parsed_b=parsed_2
-  # )
-  # structural_similarity_score = structure.structure_score()
-  # print("S Score: ", structural_similarity_score)
+
+def positive_integer(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
 
 
+def build_parser():
+  parser = argparse.ArgumentParser(description="Run one stage of the OLMS stability pilot.")
+  commands = parser.add_subparsers(dest="command")
+
+  responses = commands.add_parser("responses", help="Collect and save repeated A/B responses.")
+  responses.add_argument("--essays", type=Path, help="Essay directory (defaults to configuration.essays_path).")
+  responses.add_argument("--repeats", type=positive_integer, default=10, help="Responses per essay per prompt (default: 10; minimum: 2).")
+  responses.add_argument("--output", type=Path, default=Path("data/feedback_data.csv"))
+  responses.add_argument("--resume", action="store_true", help="Generate only missing responses in a compatible dataset.")
+  responses.set_defaults(run=collect_responses)
+
+  vectors = commands.add_parser("vectors", help="Compute saved-response AA, BB, AB, and self-comparison vectors.")
+  vectors.add_argument("--responses", type=Path, default=Path("data/feedback_data.csv"))
+  vectors.add_argument("--output", type=Path, default=Path("data/feedback_data_olms_vectors.csv"))
+  vectors.add_argument("--parser-dir", type=Path, default=Path(".models/udpipe"))
+  vectors.add_argument("--resume", action="store_true", help="Compute only missing pairs in a compatible checkpoint.")
+  vectors.add_argument("--diagnostics", action="store_true", help="Append sentence and structure diagnostics alongside vectors.")
+  vectors.set_defaults(run=calculate_vectors)
+
+  analysis = commands.add_parser("analyze", help="Analyze saved vectors without loading language or scoring models.")
+  analysis.add_argument("--vectors", type=Path, default=Path("data/feedback_data_olms_vectors.csv"))
+  analysis.add_argument("--output", type=Path, default=Path("data/analysis"))
+  analysis.add_argument("--bootstrap-replicates", type=positive_integer, default=5000)
+  analysis.add_argument("--seed", type=int, default=42, help="Nonnegative bootstrap random seed (default: 42).")
+  analysis.add_argument("--confidence", type=float, default=0.95)
+  analysis.set_defaults(run=analyze_vectors)
+  
+  return parser
 
 
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not args.command:
+        parser.print_help()
+        return
+    try:
+        args.run(args)
+    except (ValueError, OSError) as error:
+        parser.exit(2, f"Error: {error}\n")
 
-  return
 
 if __name__ == "__main__":
-  main()
+    main()
+
+
+# python main.py responses --output data/pilot_responses.csv
+# python main.py vectors --responses data/pilot_responses.csv --output data/pilot_vectors.csv
+# python main.py analyze --vectors data/pilot_vectors.csv --output data/pilot_analysis

@@ -45,12 +45,15 @@ def read_responses(path, complete=True, expected_count=None):
       raise ValueError("Malformed or interrupted response CSV row.")
     if not row["essay_file"].strip() or row["prompt"] not in ["A", "B"] or not row["response"].strip():
       raise ValueError("Responses require an essay, an A/B prompt label, and nonempty text.")
+
     try:
       index = int(row["response_index"])
     except (ValueError, TypeError) as error:
       raise ValueError("Response indices must be positive integers.") from error
+
     if index < 1 or (expected_count is not None and index > expected_count):
       raise ValueError("Response index is outside the requested repetition count.")
+
     row["response_index"] = index
     key = (row["essay_file"], row["prompt"], index)
     if key in seen:
@@ -66,7 +69,7 @@ def read_responses(path, complete=True, expected_count=None):
       raise ValueError("At least two responses per essay and prompt are required.")
     for essay in {row["essay_file"] for row in rows}:
       for prompt in ["A", "B"]:
-          if groups.get((essay, prompt)) != set(range(1, count + 1)):
-            raise ValueError(f"Incomplete responses for {essay}, prompt {prompt}; expected indices 1..{count}.")
+        if groups.get((essay, prompt)) != set(range(1, count + 1)):
+          raise ValueError(f"Incomplete responses for {essay}, prompt {prompt}; expected indices 1..{count}.")
 
   return rows
