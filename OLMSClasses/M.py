@@ -1,7 +1,7 @@
 # This script generates the semantic similarity aggregate score
 # M is for meaning!
 import pandas as pd
-from bert_score import BERTScorer
+from TextProcessing.shared_bert_scorer import get_bert_scorer
 
 class M:
   """
@@ -10,7 +10,7 @@ class M:
   def __init__(self, response_1: str, response_2: str) -> None:
     self.response_1 = response_1
     self.response_2 = response_2
-    self.scorer = BERTScorer(lang="en", rescale_with_baseline=True)
+    self.scorer = get_bert_scorer()
 
   def meaning_similarity(self) -> dict[str, float]:
     """

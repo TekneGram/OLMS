@@ -1,5 +1,5 @@
-from bert_score import BERTScorer
 import pandas as pd
+from TextProcessing.shared_bert_scorer import get_bert_scorer
 
 class BertScore:
   def __init__(
@@ -9,7 +9,7 @@ class BertScore:
   ) -> None:
     self.text_a = text_a
     self.text_b = text_b
-    self.scorer = BERTScorer(lang="en", rescale_with_baseline=True)
+    self.scorer = get_bert_scorer()
 
   def create_bert_score_table(self) -> pd.DataFrame:
     pairs = [(x, y) for x in self.text_a for y in self.text_b]

@@ -57,7 +57,7 @@ class S:
     "obj",
   )
 
-  FEATURE_NAMES = (
+  RATE_FEATURE_NAMES = (
     "advcl_per_sentence",
     "acl_per_sentence",
     "acl_relcl_per_sentence",
@@ -81,6 +81,32 @@ class S:
     "long_dependency_rate_ge_5",
   )
 
+  TOTAL_FEATURE_NAMES = (
+    "advcl",
+    "acl",
+    "acl_relcl",
+    "ccomp",
+    "xcomp",
+    "csubj",
+    "amod",
+    "advmod",
+    "compound",
+    "nmod",
+    "appos",
+    "nsubj_pass",
+    "aux_pass",
+    "nsubj",
+    "obj",
+    "total_token_depth",
+    "embedded_clausal_nodes",
+    "maximum_dependency_depth",
+    "total_dependency_distance",
+    "maximum_dependency_distance",
+    "long_dependencies_ge_5",
+  )
+
+  FEATURE_NAMES = RATE_FEATURE_NAMES
+
   def __init__(
       self,
       parsed_a: DependencyParse,
@@ -95,7 +121,21 @@ class S:
 
   def structure_score(self) -> float:
     """
-    Return feature-wise syntactic complexity similarity over whole responses.
+    Return syntactic complexity similarity over whole responses.
+    The final score is the mean of normalized-rate similarity and raw-total
+    similarity.
+    """
+    normalized_score = self.normalized_structure_score()
+    total_score = self.total_structure_score()
+
+    if normalized_score == 0.0 and total_score == 0.0:
+      return 0.0
+
+    return float((normalized_score + total_score) / 2.0)
+
+  def normalized_structure_score(self) -> float:
+    """
+    Return feature-wise similarity over normalized syntactic complexity rates.
     """
     table = self.feature_table()
 
@@ -103,6 +143,30 @@ class S:
       return 0.0
 
     return float(table["similarity"].mean())
+
+  def total_structure_score(self) -> float:
+    """
+    Return feature-wise similarity over raw syntactic complexity totals.
+    """
+    table = self.total_feature_table()
+
+    if table.empty:
+      return 0.0
+
+    return float(table["similarity"].mean())
+
+  def score_breakdown(self) -> dict[str, float]:
+    """
+    Return the normalized, total, and combined structure scores.
+    """
+    normalized_score = self.normalized_structure_score()
+    total_score = self.total_structure_score()
+
+    return {
+      "normalized_struct": normalized_score,
+      "total_struct": total_score,
+      "struct": float((normalized_score + total_score) / 2.0),
+    }
 
   def feature_table(self) -> pd.DataFrame:
     """
@@ -112,9 +176,37 @@ class S:
     rates_b = self.feature_rates(self.parsed_b)
 
     rows = []
-    for feature_name in self.FEATURE_NAMES:
+    for feature_name in self.RATE_FEATURE_NAMES:
       value_a = rates_a[feature_name]
       value_b = rates_b[feature_name]
+      rows.append({
+        "feature": feature_name,
+        "a_value": value_a,
+        "b_value": value_b,
+        "similarity": self._feature_similarity(value_a, value_b),
+      })
+
+    return pd.DataFrame(
+      rows,
+      columns=[
+        "feature",
+        "a_value",
+        "b_value",
+        "similarity",
+      ]
+    )
+
+  def total_feature_table(self) -> pd.DataFrame:
+    """
+    Return diagnostics for each raw syntactic complexity total.
+    """
+    totals_a = self.feature_totals(self.parsed_a)
+    totals_b = self.feature_totals(self.parsed_b)
+
+    rows = []
+    for feature_name in self.TOTAL_FEATURE_NAMES:
+      value_a = totals_a[feature_name]
+      value_b = totals_b[feature_name]
       rows.append({
         "feature": feature_name,
         "a_value": value_a,
@@ -199,6 +291,57 @@ class S:
     }
 
     return rates
+
+  def feature_totals(
+      self,
+      parsed: DependencyParse,
+  ) -> dict[str, float]:
+    tokens = self._content_tokens(parsed)
+    token_by_sentence_and_id = {
+      (token.sentence_id, token.token_id): token
+      for token in tokens
+    }
+
+    deprel_counts = Counter(
+      token.dependency_relation
+      for token in tokens
+    )
+
+    depths = self._dependency_depths(tokens, token_by_sentence_and_id)
+    distances = self._dependency_distances(tokens)
+    embedded_clausal_nodes = sum(
+      deprel_counts[deprel]
+      for deprel in self.SUBORDINATE_CLAUSE_DEPRELS
+    )
+
+    return {
+      "advcl": float(deprel_counts["advcl"]),
+      "acl": float(deprel_counts["acl"]),
+      "acl_relcl": float(deprel_counts["acl:relcl"]),
+      "ccomp": float(deprel_counts["ccomp"]),
+      "xcomp": float(deprel_counts["xcomp"]),
+      "csubj": float(deprel_counts["csubj"]),
+      "amod": float(deprel_counts["amod"]),
+      "advmod": float(deprel_counts["advmod"]),
+      "compound": float(deprel_counts["compound"]),
+      "nmod": float(deprel_counts["nmod"]),
+      "appos": float(deprel_counts["appos"]),
+      "nsubj_pass": float(deprel_counts["nsubj:pass"]),
+      "aux_pass": float(deprel_counts["aux:pass"]),
+      "nsubj": float(deprel_counts["nsubj"]),
+      "obj": float(deprel_counts["obj"]),
+      "total_token_depth": float(sum(depths)),
+      "embedded_clausal_nodes": float(embedded_clausal_nodes),
+      "maximum_dependency_depth": float(max(depths, default=0)),
+      "total_dependency_distance": float(sum(distances)),
+      "maximum_dependency_distance": float(max(distances, default=0)),
+      "long_dependencies_ge_5": float(
+        sum(
+          distance >= self.long_dependency_threshold
+          for distance in distances
+        )
+      ),
+    }
 
   def _content_tokens(
       self,

@@ -41,7 +41,7 @@ ai_knowledge = (
   )
 ai_task_description = "Evaluate the properties of the writer's thesis statement in the essay provided by the student: \n\n"
 
-ai_recipient_information_1 = "Write detailed feedback for each property of the thesis statement. Provide advice."
+ai_recipient_information_1 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence."
 ai_recipient_information_2 = "Write one sentence of feedback per property of the thesis statement. Provide advice in one sentence."
 
 ai_response_format = {
