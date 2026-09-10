@@ -1,4 +1,5 @@
 import contextlib
+import importlib.util
 import io
 import json
 import subprocess
@@ -12,6 +13,7 @@ import pandas as pd
 
 import configuration
 from analysis.olms_vector_table import OLMSVectorTable
+from analysis.within_essay_stability_analyzer import WithinEssayStabilityAnalyzer
 from experiment_data import metadata_path, read_responses
 from SLM.essay_feedback import EssayFeedback
 from vector_generation import generate_vectors
@@ -131,6 +133,37 @@ class WorkflowTests(unittest.TestCase):
         again = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(again.returncode, 2)
         self.assertIn("not empty", again.stderr)
+
+    def test_cli_charts_without_model_imports(self):
+        if importlib.util.find_spec("matplotlib") is None:
+            self.skipTest("matplotlib is not installed")
+        analysis = self.root / "analysis"
+        output = self.root / "charts"
+        analysis.mkdir()
+        table = OLMSVectorTable(vector_fixture())
+        within, _ = WithinEssayStabilityAnalyzer().analyze(table)
+        intervals = []
+        for row in within.itertuples(index=False):
+            intervals.append({
+                "essay_file": row.essay_file, "prompt": row.prompt,
+                "metric": "mean_distance", "confidence": 0.95,
+                "lower": row.mean_distance * 0.8, "upper": row.mean_distance * 1.2,
+                "replicates": 100,
+            })
+        within.to_csv(analysis / "within_essay_stability.csv", index=False)
+        pd.DataFrame(intervals).to_csv(analysis / "within_essay_intervals.csv", index=False)
+        script = (
+            "import sys; from main import main; main(sys.argv[1:]); "
+            "assert not any(p in sys.modules for p in "
+            "['llama_cpp', 'torch', 'transformers', 'bert_score', 'ufal.udpipe', 'SLM.slm'])"
+        )
+        command = [sys.executable, "-c", script, "charts", "--analysis", str(analysis),
+                   "--output", str(output)]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ["primary_rq1", "diagnostic_rq1"]:
+            for suffix in ["png", "jpg", "md"]:
+                self.assertTrue((output / f"{name}.{suffix}").exists())
 
     def test_help_does_not_import_model_dependencies(self):
         script = "import sys; import main; main.main([]); assert 'torch' not in sys.modules and 'llama_cpp' not in sys.modules"

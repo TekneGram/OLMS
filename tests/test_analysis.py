@@ -1,5 +1,7 @@
 import unittest
+import tempfile
 from itertools import combinations_with_replacement, product
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -95,16 +97,19 @@ class AnalysisTests(unittest.TestCase):
 
     def test_bootstrap_matches_response_resampling_by_hand(self):
         table = OLMSVectorTable(vector_fixture(essay_count=1, count=3))
-        actual = ResponseLevelBootstrapper(replicates=8, seed=17).run(table)
+        bootstrapper = ResponseLevelBootstrapper(replicates=8, seed=17)
+        actual = bootstrapper.run(table)
         rng = np.random.default_rng(17)
-        a, b = rng.integers(0, 3, (8, 3)), rng.integers(0, 3, (8, 3))
+        a = bootstrapper._draw_samples(rng, 3, 8)
+        b = bootstrapper._draw_samples(rng, 3, 8)
         matrices = table.matrices("essay_0.md")
         self.assertTrue(any(len(set(sample)) < 3 for sample in a))
         for replicate in range(8):
             centroids = []
             for prompt, sample in [("A", a[replicate]), ("B", b[replicate])]:
                 pairs = np.array([matrices[prompt * 2][sample[i], sample[j]]
-                                  for i in range(3) for j in range(i + 1, 3)])
+                                  for i in range(3) for j in range(i + 1, 3)
+                                  if sample[i] != sample[j]])
                 centroid = pairs.mean(axis=0)
                 centroids.append(centroid)
                 distance = np.sqrt(((pairs - centroid) ** 2).sum(axis=1)).mean()
@@ -116,6 +121,29 @@ class AnalysisTests(unittest.TestCase):
             row = actual["prompt_shift_bootstrap"].iloc[replicate]
             np.testing.assert_allclose(row[[f"delta_{c}" for c in table.COMPONENTS]].to_numpy(dtype=float), delta)
             self.assertAlmostEqual(row.magnitude, np.linalg.norm(delta))
+
+    def test_within_bootstrap_excludes_duplicate_response_pairs(self):
+        frame = vector_fixture(essay_count=1, count=4)
+        self_pair = (
+            (frame.comparison_type == "AA") &
+            (frame.response_index_1 == 2) &
+            (frame.response_index_2 == 2)
+        )
+        frame.loc[self_pair, OLMSVectorTable.COMPONENTS] = [99, 99, 99, 99]
+        table = OLMSVectorTable(frame)
+        matrices = table.matrices("essay_0.md")
+        bootstrapper = ResponseLevelBootstrapper(replicates=1, seed=3)
+        left, right = np.triu_indices(4, k=1)
+        samples = np.array([[0, 1, 1, 2]])
+        centroids, distances = bootstrapper._within_prompt_bootstrap(
+            matrices["AA"], samples, left, right)
+        kept = np.array([matrices["AA"][i, j] for i, j in [
+            (0, 1), (0, 1), (0, 2), (1, 2), (1, 2)]])
+        excluded_self = matrices["AA"][1, 1]
+        self.assertFalse(any(np.array_equal(row, excluded_self) for row in kept))
+        np.testing.assert_allclose(centroids[0], kept.mean(axis=0))
+        expected_distance = np.sqrt(((kept - kept.mean(axis=0)) ** 2).sum(axis=1)).mean()
+        self.assertAlmostEqual(distances[0], expected_distance)
 
     def test_bootstrap_reproducibility_and_overall_aggregation(self):
         table = OLMSVectorTable(vector_fixture())
@@ -146,6 +174,41 @@ class AnalysisTests(unittest.TestCase):
         self.assertTrue(0 < result["p_value"] < 1)
         self.assertEqual(HotellingT2Test().run(shifts[:4])["status"], "unavailable")
         self.assertEqual(HotellingT2Test().run(np.ones((8, 4)))["status"], "unavailable")
+
+    def test_charts_write_images_and_references(self):
+        try:
+            from analysis.charts import Charts
+        except ModuleNotFoundError as error:
+            if error.name == "matplotlib":
+                self.skipTest("matplotlib is not installed")
+            raise
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            analysis = root / "analysis"
+            output = root / "charts"
+            analysis.mkdir()
+            table = OLMSVectorTable(vector_fixture(essay_count=2, count=3))
+            within, _ = WithinEssayStabilityAnalyzer().analyze(table)
+            intervals = []
+            for row in within.itertuples(index=False):
+                intervals.append({
+                    "essay_file": row.essay_file, "prompt": row.prompt,
+                    "metric": "mean_distance", "confidence": 0.95,
+                    "lower": row.mean_distance * 0.8, "upper": row.mean_distance * 1.2,
+                    "replicates": 100,
+                })
+            within.to_csv(analysis / "within_essay_stability.csv", index=False)
+            pd.DataFrame(intervals).to_csv(analysis / "within_essay_intervals.csv", index=False)
+
+            charts = Charts(analysis, output)
+            for paths in [charts.primary_rq1(), charts.diagnostic_rq1()]:
+                for path in paths:
+                    self.assertTrue(path.exists(), path)
+                    self.assertGreater(path.stat().st_size, 0)
+            self.assertIn("Research Question 1", (output / "primary_rq1.md").read_text())
+            with self.assertRaises(FileExistsError):
+                Charts(analysis, output)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ class AnalysisWriter:
                 f"bootstrap replicates: {metadata['bootstrap_replicates']}; seed: {metadata['seed']}.", "",
                 "Distances use raw O, L, M, S components and the Euclidean norm. "
                 "Self comparisons are bootstrap support only. Essays are held fixed during resampling.", "",
+                "Within-prompt bootstrap reconstruction samples responses with replacement, then excludes "
+                "same-response ID pairs before computing centroids and distances.", "",
                 "Component SDs describe dependent pair scores. Confidence intervals resample responses. "
                 "Undefined descriptive statistics are shown as NaN and saved as empty CSV cells.", ""]
     for name, frame in tables.items():

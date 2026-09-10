@@ -83,6 +83,7 @@ def analyze_vectors(args):
       "response_count": table.response_count, "components": table.COMPONENTS,
       "bootstrap_replicates": args.bootstrap_replicates, "seed": args.seed,
       "confidence": args.confidence, "bootstrap_unit": "response within essay and prompt",
+      "within_prompt_bootstrap_pairs": "resampled distinct response ID pairs only",
       "essay_resampling": False, "component_scaling": "none", "distance": "euclidean",
       "sd_ddof": 1, "source_metadata": source_metadata,
   }
@@ -95,6 +96,28 @@ def analyze_vectors(args):
   writer.write_json("metadata", metadata)
   report = writer.write_report(tables, hotelling, metadata)
   print(f"Saved analysis to {args.output}; report: {report}")
+
+
+def create_charts(args):
+  try:
+    from analysis.charts import Charts
+  except ModuleNotFoundError as error:
+    if error.name == "matplotlib":
+      raise ValueError("Charts require matplotlib. Install project dependencies with: python -m pip install -r requirements.txt") from error
+    raise
+
+  output = args.output
+  if output is None:
+    analysis = Path(args.analysis)
+    stem = analysis.name
+    output_name = stem[:-9] + "_charts" if stem.endswith("_analysis") else stem + "_charts"
+    output = analysis.parent / output_name
+
+  charts = Charts(args.analysis, output)
+  paths = []
+  paths.extend(charts.primary_rq1())
+  paths.extend(charts.diagnostic_rq1())
+  print(f"Saved {len(paths)} chart files to {output}")
 
 
 def positive_integer(value):
@@ -130,6 +153,11 @@ def build_parser():
   analysis.add_argument("--seed", type=int, default=42, help="Nonnegative bootstrap random seed (default: 42).")
   analysis.add_argument("--confidence", type=float, default=0.95)
   analysis.set_defaults(run=analyze_vectors)
+
+  charts = commands.add_parser("charts", help="Create charts from saved analysis outputs.")
+  charts.add_argument("--analysis", type=Path, default=Path("data/analysis"), help="Analysis output directory containing CSV results.")
+  charts.add_argument("--output", type=Path, help="Chart output directory (defaults to a sibling *_charts directory).")
+  charts.set_defaults(run=create_charts)
   
   return parser
 
@@ -149,7 +177,15 @@ def main(argv=None):
 if __name__ == "__main__":
     main()
 
+### Run an experiment ###
+# Change the path to the model in the configuration file.
+# python3 main.py responses --output data/pilot_responses.csv
+# python3 main.py vectors --responses data/pilot_responses.csv --output data/pilot_vectors.csv
+# python3 main.py analyze --vectors data/pilot_vectors.csv --output data/pilot_analysis
+# python3 main.py charts --analysis data/pilot_analysis
 
-# python main.py responses --output data/pilot_responses.csv
-# python main.py vectors --responses data/pilot_responses.csv --output data/pilot_vectors.csv
-# python main.py analyze --vectors data/pilot_vectors.csv --output data/pilot_analysis
+### Run a smoke test ###
+# Generate responses
+# python3 main.py responses --essays tmp_smoke_essays --repeats 2 --output data/smoke_responses.csv
+# Generate vectors
+# python3 main.py vectors --responses data/smoke_responses.csv --output data/smoke_vectors.csv --diagnostics

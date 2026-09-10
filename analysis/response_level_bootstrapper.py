@@ -17,6 +17,31 @@ class ResponseLevelBootstrapper:
     self.replicates = replicates
     self.seed = seed
 
+  def _draw_samples(self, rng, count, size):
+    samples = rng.integers(0, count, size=(size, count))
+    for row in range(size):
+      while len(np.unique(samples[row])) < 2:
+        samples[row] = rng.integers(0, count, size=count)
+    return samples
+
+  def _within_prompt_bootstrap(self, matrix, samples, left, right):
+    centroids = np.empty((samples.shape[0], 4), dtype=float)
+    mean_distances = np.empty(samples.shape[0], dtype=float)
+
+    for row, sample in enumerate(samples):
+      source_ids = sample[left]
+      target_ids = sample[right]
+      keep = source_ids != target_ids
+      if not keep.any():
+        raise ValueError("Bootstrap sample must contain at least two distinct responses.")
+
+      pairs = matrix[source_ids[keep], target_ids[keep]]
+      centroid = VectorCentroidTransformer.transform(pairs)
+      centroids[row] = centroid
+      mean_distances[row] = VectorDistanceTransformer.transform(pairs, centroid).mean()
+
+    return centroids, mean_distances
+
   def run(self, table):
     rng = np.random.default_rng(self.seed)
     within, shifts = [], []
@@ -27,16 +52,15 @@ class ResponseLevelBootstrapper:
       matrices = table.matrices(essay)
       for start in range(0, self.replicates, 250):
         size = min(250, self.replicates - start)
-        samples = {p: rng.integers(0, count, size=(size, count)) for p in ["A", "B"]}
+        samples = {p: self._draw_samples(rng, count, size) for p in ["A", "B"]}
         centroids = {}
         replicate_ids = np.arange(start + 1, start + size + 1)
 
         for prompt in ["A", "B"]:
           sample = samples[prompt]
-          pairs = matrices[prompt * 2][sample[:, left], sample[:, right]]
-          centroid = VectorCentroidTransformer.transform(pairs)
+          centroid, distance = self._within_prompt_bootstrap(
+            matrices[prompt * 2], sample, left, right)
           centroids[prompt] = centroid
-          distance = VectorDistanceTransformer.transform(pairs, centroid).mean(axis=1)
           data = {"essay_file": essay, "prompt": prompt,
                   "replicate": replicate_ids, "mean_distance": distance}
 

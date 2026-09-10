@@ -3,7 +3,8 @@
 # ---------------------
 # LLM Server Config
 # ---------------------
-llm_path = "/Users/danielmikaleola/Documents/Development/EssayLensPython/.appdata/models/Qwen3-4B-Q8_0.gguf"
+# llm_path = "/Users/danielmikaleola/Documents/Development/EssayLensPython/.appdata/models/Qwen3-4B-Q8_0.gguf"
+llm_path = "/Volumes/Corpora/LLMs/Gemma_4/gemma-4-E4B-it-Q4_K_M.gguf"
 n_ctx=4096
 n_threads=8
 n_gpu_layers=999
