@@ -4,6 +4,7 @@ from OLMSClasses.M import M
 from OLMSClasses.S import S
 import pandas as pd
 from TextProcessing.deprel import DependencyParse
+from SLM.embedding import EmbeddingModel
 
 class OLMSVector:
   def __init__(
@@ -12,7 +13,8 @@ class OLMSVector:
       parsed_1: DependencyParse,
       parsed_2: DependencyParse,
       response_1: str, 
-      response_2: str
+      response_2: str,
+      embedding_model: EmbeddingModel,
       ) -> None:
     
     self.organization = O(
@@ -26,7 +28,8 @@ class OLMSVector:
 
     self.meaning = M(
       response_1=response_1,
-      response_2=response_2
+      response_2=response_2,
+      embedding_model=embedding_model,
     )
 
     self.structure = S(

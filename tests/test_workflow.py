@@ -102,6 +102,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(scorer.call_count, 41)
         OLMSVectorTable(self.vectors)
 
+    def test_default_pair_scorer_closes_after_generation_and_errors(self):
+        self.collect()
+        successful = Mock(side_effect=self.fake_score)
+        with patch("scoring.OLMSPairScorer", return_value=successful):
+            generate_vectors(self.responses, self.vectors)
+        successful.close.assert_called_once_with()
+
+        failed_vectors = self.root / "failed_vectors.csv"
+        failing = Mock(side_effect=RuntimeError("interrupted"))
+        with patch("scoring.OLMSPairScorer", return_value=failing):
+            with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                generate_vectors(self.responses, failed_vectors)
+        failing.close.assert_called_once_with()
+
     def test_legacy_and_incomplete_input_rejected(self):
         self.responses.write_text("essay_file,response_index,response\nx.md,1,Feedback\n")
         with self.assertRaisesRegex(ValueError, "Legacy"):

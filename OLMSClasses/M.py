@@ -1,18 +1,26 @@
 # This script generates the semantic similarity aggregate score
 # M is for meaning!
 import pandas as pd
+import numpy as np
+from SLM.embedding import EmbeddingModel
 from TextProcessing.shared_bert_scorer import get_bert_scorer
 
 class M:
   """
   Meaning / Similarity over whole language model responses
   """
-  def __init__(self, response_1: str, response_2: str) -> None:
+  def __init__(
+      self,
+      response_1: str,
+      response_2: str,
+      embedding_model: EmbeddingModel,
+  ) -> None:
     self.response_1 = response_1
     self.response_2 = response_2
     self.scorer = get_bert_scorer()
+    self.embedding_model = embedding_model
 
-  def meaning_similarity(self) -> dict[str, float]:
+  def meaning_similarity_bertscore(self) -> dict[str, float]:
     """
     Returns the BERTScore between self.response_1 and self.response_2
     """
@@ -26,9 +34,25 @@ class M:
       "f1": f1[0].item()
     }
 
+  def meaning_similarity_embeddings(self) -> float:
+    """Return transformed cosine similarity between the response embeddings."""
+    if not self.response_1.strip() or not self.response_2.strip():
+      raise ValueError("Embedding meaning similarity requires two non-empty responses.")
+
+    embeddings = self.embedding_model.encode([self.response_1, self.response_2])
+    first, second = embeddings
+    denominator = np.linalg.norm(first) * np.linalg.norm(second)
+    if denominator == 0:
+      raise ValueError("Embedding meaning similarity requires non-zero embedding vectors.")
+
+    cosine_score = float(np.dot(first, second) / denominator)
+    embedding_score = (cosine_score + 1.0) / 2.0
+    return max(0.0, min(1.0, embedding_score))
+
   def get_similarity_score(self) -> float:
-    m = self.meaning_similarity()
-    return m["f1"]
+    bertscore = self.meaning_similarity_bertscore()
+    embedding_score = self.meaning_similarity_embeddings()
+    return (bertscore["f1"] + embedding_score) / 2.0
 
 
 class M_old:
