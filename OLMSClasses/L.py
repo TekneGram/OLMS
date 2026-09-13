@@ -1,7 +1,82 @@
 # This script calculates a lexical similarity score using TF-IDF cosine similarity.
+from collections import Counter
+import math
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
+
+from TextProcessing.phrase_ngrams import PhraseNGramExtractor
+
+
+class Phraseology:
+  """Compare sentence-bounded 2-gram and 3-gram frequency distributions."""
+
+  def __init__(
+      self,
+      text_a: str,
+      text_b: str,
+      smoothing: float = 1e-9,
+  ) -> None:
+    self.text_a = text_a
+    self.text_b = text_b
+    self.smoothing = smoothing
+    self.extractor = PhraseNGramExtractor()
+
+  def _jsd(self, counts_a: Counter[str], counts_b: Counter[str]) -> float:
+    if not counts_a or not counts_b:
+      # No shared evidence exists when either response has no usable n-grams.
+      return 1.0
+
+    vocabulary = set(counts_a) | set(counts_b)
+    total_a = sum(counts_a[phrase] + self.smoothing for phrase in vocabulary)
+    total_b = sum(counts_b[phrase] + self.smoothing for phrase in vocabulary)
+
+    distribution_a = {
+      phrase: (counts_a[phrase] + self.smoothing) / total_a
+      for phrase in vocabulary
+    }
+    distribution_b = {
+      phrase: (counts_b[phrase] + self.smoothing) / total_b
+      for phrase in vocabulary
+    }
+    midpoint = {
+      phrase: (distribution_a[phrase] + distribution_b[phrase]) / 2.0
+      for phrase in vocabulary
+    }
+
+    def kl_divergence(distribution: dict[str, float]) -> float:
+      return sum(
+        probability * math.log2(probability / midpoint[phrase])
+        for phrase, probability in distribution.items()
+      )
+
+    # Smoothing prevents log(0) and gives absent phrases a small probability.
+    divergence = (
+      kl_divergence(distribution_a) + kl_divergence(distribution_b)
+    ) / 2.0
+    return min(1.0, max(0.0, divergence))
+
+  def jsd_2gram(self) -> float:
+    return self._jsd(
+      self.extractor.counts(self.text_a, 2),
+      self.extractor.counts(self.text_b, 2),
+    )
+
+  def jsd_3gram(self) -> float:
+    return self._jsd(
+      self.extractor.counts(self.text_a, 3),
+      self.extractor.counts(self.text_b, 3),
+    )
+
+  def similarity_2gram(self) -> float:
+    return 1.0 - self.jsd_2gram()
+
+  def similarity_3gram(self) -> float:
+    return 1.0 - self.jsd_3gram()
+
+  def similarity(self) -> float:
+    # Equal weighting keeps the shorter 2-gram and more specific 3-gram views balanced.
+    return (self.similarity_2gram() + self.similarity_3gram()) / 2.0
 
 class L:
   """
@@ -193,6 +268,14 @@ class L:
       threshold: float = 0.72,
   ) -> float:
     if text_size >= 100:
-      return (self.mtld_similarity(threshold) + self.tf_idf_score())/2.0
+      current_lexical_similarity = (self.mtld_similarity(threshold) + self.tf_idf_score())/2.0
     else:
-      return (self.mattr_similarity(window_size) + self.tf_idf_score())/2.0
+      current_lexical_similarity = (self.mattr_similarity(window_size) + self.tf_idf_score())/2.0
+
+    phraseology_similarity = Phraseology(
+      self.text_a,
+      self.text_b,
+    ).similarity()
+
+    # Phraseology is an additional signal, so vocabulary remains the main L component.
+    return current_lexical_similarity * 0.8 + phraseology_similarity * 0.2
