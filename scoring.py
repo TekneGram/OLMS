@@ -1,6 +1,11 @@
 from pathlib import Path
+from collections.abc import Iterator, Sequence
 from typing import Any
 
+import numpy as np
+
+import configuration
+from TextProcessing.shared_bert_scorer import clear_bertscore_memory
 from SLM.embedding import EmbeddingModel
 from TextProcessing.deprel import DependencyParse
 
@@ -8,10 +13,18 @@ from TextProcessing.deprel import DependencyParse
 ResponseRow = dict[str, Any]
 PreparedResponse = tuple[DependencyParse, list[str]]
 VectorScores = dict[str, float]
+ResponseKey = tuple[str, str, int]
+
+
+def _is_out_of_memory(error: RuntimeError) -> bool:
+  message = str(error).lower()
+  return "out of memory" in message or "not enough memory" in message
 
 
 class OLMSPairScorer:
   """Score saved response pairs while caching parsed responses per essay."""
+
+  EMBEDDING_BATCH_SIZE = 16
 
   def __init__(
       self,
@@ -24,7 +37,74 @@ class OLMSPairScorer:
     self.embedding_model = EmbeddingModel()
     self.diagnostics_dir = Path(diagnostics_dir) if diagnostics_dir is not None else None
     self.cache: dict[tuple[str, int], PreparedResponse] = {}
+    self.embedding_cache: dict[ResponseKey, np.ndarray] = {}
+    self.bertscore_context_cache = None
     self.active_essay: str | None = None
+
+  @staticmethod
+  def _response_key(row: ResponseRow) -> ResponseKey:
+    return (row["essay_file"], row["prompt"], row["response_index"])
+
+  def _activate_essay(self, essay_file: str) -> None:
+    """Clear per-essay caches when scoring advances to another essay."""
+    if essay_file != self.active_essay:
+      self.cache.clear()
+      self.embedding_cache.clear()
+      if self.bertscore_context_cache is not None:
+        self.bertscore_context_cache.clear()
+      self.active_essay = essay_file
+
+  def _get_bertscore_context_cache(self):
+    """Create the shared BERTScore contextual-token cache only when needed."""
+    if self.bertscore_context_cache is None:
+      from TextProcessing.bertscore_context_cache import BertScoreContextCache
+      from TextProcessing.shared_bert_scorer import get_bert_scorer
+
+      self.bertscore_context_cache = BertScoreContextCache(get_bert_scorer())
+    return self.bertscore_context_cache
+
+  def prepare_embeddings(self, responses: Sequence[ResponseRow]) -> None:
+    """Encode each unique response needed for the active essay once."""
+    if not responses:
+      return
+
+    essay_file = responses[0]["essay_file"]
+    if any(row["essay_file"] != essay_file for row in responses):
+      raise ValueError("Embedding preparation requires responses from one essay.")
+    self._activate_essay(essay_file)
+
+    unique_responses: dict[ResponseKey, ResponseRow] = {}
+    for row in responses:
+      unique_responses.setdefault(self._response_key(row), row)
+
+    missing = [
+      row for key, row in unique_responses.items()
+      if key not in self.embedding_cache
+    ]
+    for start in range(0, len(missing), self.EMBEDDING_BATCH_SIZE):
+      batch = missing[start:start + self.EMBEDDING_BATCH_SIZE]
+      embeddings = self.embedding_model.encode([row["response"] for row in batch])
+      for row, embedding in zip(batch, embeddings, strict=True):
+        self.embedding_cache[self._response_key(row)] = embedding
+
+  def prepare_bertscore_embeddings(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> None:
+    """Encode every full response and parsed clause needed by an essay once."""
+    if not pairs:
+      return
+    essay_file = pairs[0][0]["essay_file"]
+    if any(first["essay_file"] != essay_file or second["essay_file"] != essay_file
+           for first, second in pairs):
+      raise ValueError("BERTScore contextual preparation requires pairs from one essay.")
+    self._activate_essay(essay_file)
+
+    texts = []
+    for first, second in pairs:
+      (_, clauses_a), (_, clauses_b) = self._prepare(first), self._prepare(second)
+      texts.extend((first["response"], second["response"], *clauses_a, *clauses_b))
+    self._get_bertscore_context_cache().prepare(texts)
 
   def _prepare(
       self,
@@ -51,26 +131,79 @@ class OLMSPairScorer:
       first: ResponseRow,
       second: ResponseRow,
   ) -> VectorScores:
+    return next(self.score_pairs([(first, second)]))
+
+  def score_pairs(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> Iterator[VectorScores]:
+    """Score complete response pairs in bounded BERTScore batches."""
+    self.prepare_bertscore_embeddings(pairs)
+    batch_size = configuration.bertscore_pair_batch_size
+    if not isinstance(batch_size, int) or batch_size < 1:
+      raise ValueError("bertscore_pair_batch_size must be a positive integer.")
+    for start in range(0, len(pairs), batch_size):
+      yield from self._score_pair_batch_with_backoff(pairs[start:start + batch_size])
+
+  def _score_pair_batch_with_backoff(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> Iterator[VectorScores]:
+    """Retry an OOM batch as smaller, still-complete response-pair groups."""
+    try:
+      yield from self._score_pair_batch(pairs)
+    except RuntimeError as error:
+      if not _is_out_of_memory(error) or len(pairs) == 1:
+        raise
+      clear_bertscore_memory()
+      retry_size = max(1, len(pairs) // 2)
+      for start in range(0, len(pairs), retry_size):
+        yield from self._score_pair_batch_with_backoff(pairs[start:start + retry_size])
+
+  def _score_pair_batch(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> list[VectorScores]:
+    """Score one batch of intact response pairs without carrying partial matrices."""
+    from OLMSClasses.M import M
     from OLMSClasses.OLMS_vector import OLMSVector
     from TextProcessing.bertscorer import BertScore
 
-    if first["essay_file"] != self.active_essay:
-      self.cache.clear()
-      self.active_essay = first["essay_file"]
+    if not pairs:
+      return []
+    essay_file = pairs[0][0]["essay_file"]
+    if any(first["essay_file"] != essay_file or second["essay_file"] != essay_file
+           for first, second in pairs):
+      raise ValueError("BERTScore pair batches must contain one essay.")
+    self._activate_essay(essay_file)
 
-    parsed_a, clauses_a = self._prepare(first)
-    parsed_b, clauses_b = self._prepare(second)
-    score_table = BertScore(clauses_a, clauses_b).create_bert_score_table()
-    vector = OLMSVector(
-      score_table, parsed_a, parsed_b, first["response"], second["response"], self.embedding_model)
-    result = vector.create_olms_vector()
+    prepared = [(self._prepare(first), self._prepare(second)) for first, second in pairs]
+    context_cache = self._get_bertscore_context_cache()
+    score_tables = BertScore.create_bert_score_tables([
+      (clauses_a, clauses_b) for (_, clauses_a), (_, clauses_b) in prepared
+    ], context_cache=context_cache)
+    meaning_scores = M.batch_meaning_similarity_bertscores([
+      (first["response"], second["response"]) for first, second in pairs
+    ], context_cache=context_cache)
+    if not (len(score_tables) == len(meaning_scores) == len(pairs)):
+      raise ValueError("BERTScore batch did not return every complete response pair.")
 
-    if self.diagnostics_dir is not None:
-      label = (f"{self.active_essay}: {first['prompt']}{first['response_index']} / "
-               f"{second['prompt']}{second['response_index']}")
-      vector.structure.append_structure_to_markdown(self.diagnostics_dir / "structure.md", label)
+    results = []
+    for (first, second), ((parsed_a, _), (parsed_b, _)), score_table, meaning_score in zip(
+        pairs, prepared, score_tables, meaning_scores, strict=True):
+      vector = OLMSVector(
+        score_table, parsed_a, parsed_b, first["response"], second["response"], self.embedding_model,
+        embedding_a=self.embedding_cache.get(self._response_key(first)),
+        embedding_b=self.embedding_cache.get(self._response_key(second)),
+        meaning_bertscore=meaning_score,
+      )
+      results.append(vector.create_olms_vector())
 
-    return result
+      if self.diagnostics_dir is not None:
+        label = (f"{self.active_essay}: {first['prompt']}{first['response_index']} / "
+                 f"{second['prompt']}{second['response_index']}")
+        vector.structure.append_structure_to_markdown(self.diagnostics_dir / "structure.md", label)
+    return results
 
   def __call__(
       self,

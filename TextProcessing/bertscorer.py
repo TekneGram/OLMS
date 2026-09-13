@@ -1,4 +1,6 @@
 import pandas as pd
+from collections.abc import Sequence
+
 from TextProcessing.shared_bert_scorer import get_bert_scorer
 
 class BertScore:
@@ -12,32 +14,56 @@ class BertScore:
     self.scorer = get_bert_scorer()
 
   def create_bert_score_table(self) -> pd.DataFrame:
-    pairs = [(x, y) for x in self.text_a for y in self.text_b]
-    candidates = [x for x, y in pairs]
-    references = [y for x, y, in pairs]
+    return self.create_bert_score_tables([(self.text_a, self.text_b)], self.scorer)[0]
 
-    precision, recall, f1 = self.scorer.score(candidates, references)
+  @staticmethod
+  def create_bert_score_tables(
+      text_pairs: Sequence[tuple[list[str], list[str]]],
+      scorer=None,
+      context_cache=None,
+  ) -> list[pd.DataFrame]:
+    """Score complete sentence matrices together and reconstruct each intact table."""
+    if not text_pairs:
+      return []
 
-    precision = precision.reshape(len(self.text_a), len(self.text_b))
-    recall = recall.reshape(len(self.text_a), len(self.text_b))
-    f1 = f1.reshape(len(self.text_a), len(self.text_b))
+    if scorer is None and context_cache is None:
+      scorer = get_bert_scorer()
+    candidates, references = [], []
+    boundaries = []
+    for text_a, text_b in text_pairs:
+      if not text_a or not text_b:
+        raise ValueError("BERTScore sentence matrices require non-empty sentence lists.")
+      start = len(candidates)
+      candidates.extend(text_a_i for text_a_i in text_a for _ in text_b)
+      references.extend(text_b_i for _ in text_a for text_b_i in text_b)
+      boundaries.append((start, len(text_a) * len(text_b), text_a, text_b))
 
-    table = pd.DataFrame(
-      [
+    score_source = context_cache if context_cache is not None else scorer
+    precision, recall, f1 = score_source.score(candidates, references)
+    if not (len(precision) == len(recall) == len(f1) == len(candidates)):
+      raise ValueError("BERTScore returned an unexpected number of sentence scores.")
+
+    tables = []
+    for start, cell_count, text_a, text_b in boundaries:
+      end = start + cell_count
+      if end > len(candidates):
+        raise ValueError("BERTScore sentence matrix boundary exceeds the batched result.")
+      values = [
         [
           [
-            precision[i, j].item(),
-            recall[i, j].item(),
-            f1[i, j].item(),
+            precision[start + i * len(text_b) + j].item(),
+            recall[start + i * len(text_b) + j].item(),
+            f1[start + i * len(text_b) + j].item(),
           ]
-          for j in range(len(self.text_b))
+          for j in range(len(text_b))
         ]
-        for i in range(len(self.text_a))
-      ],
-      index=self.text_a,
-      columns=self.text_b
-    )
-    return table
+        for i in range(len(text_a))
+      ]
+      table = pd.DataFrame(values, index=text_a, columns=text_b)
+      if table.shape != (len(text_a), len(text_b)):
+        raise ValueError("BERTScore did not reconstruct a complete sentence matrix.")
+      tables.append(table)
+    return tables
 
   def create_bert_score_table_sliding_window(
       self,

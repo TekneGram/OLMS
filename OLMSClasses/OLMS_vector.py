@@ -15,6 +15,9 @@ class OLMSVector:
       response_1: str, 
       response_2: str,
       embedding_model: EmbeddingModel,
+      embedding_a = None,
+      embedding_b = None,
+      meaning_bertscore: dict[str, float] | None = None,
       ) -> None:
     
     self.organization = O(
@@ -30,6 +33,9 @@ class OLMSVector:
       response_1=response_1,
       response_2=response_2,
       embedding_model=embedding_model,
+      embedding_1=embedding_a,
+      embedding_2=embedding_b,
+      bertscore=meaning_bertscore,
     )
 
     self.structure = S(

@@ -82,6 +82,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(scorer.call_count, 42)
         self.assertEqual(len(table.select("first.md", "AA")), 3)
         self.assertEqual(len(table.select("first.md", "AB")), 9)
+        expected_pairs = []
+        for essay in ["first.md", "second.md"]:
+            for prompt in ["A", "B"]:
+                expected_pairs.extend(
+                    (essay, prompt, i, prompt, j)
+                    for i in range(1, 4) for j in range(i, 4))
+            expected_pairs.extend(
+                (essay, "A", i, "B", j)
+                for i in range(1, 4) for j in range(1, 4))
+        frame = pd.read_csv(self.vectors)
+        self.assertEqual(
+            list(frame[OLMSVectorTable.KEYS].itertuples(index=False, name=None)), expected_pairs)
         generate_vectors(self.responses, self.vectors, score_pair=scorer, resume=True)
         self.assertEqual(scorer.call_count, 42)
         with self.assertRaises(FileExistsError):
@@ -102,15 +114,70 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(scorer.call_count, 41)
         OLMSVectorTable(self.vectors)
 
+    def test_vector_resume_prepares_only_responses_in_missing_pairs(self):
+        self.collect(repeats=2)
+        generate_vectors(self.responses, self.vectors, score_pair=self.fake_score)
+
+        frame = pd.read_csv(self.vectors)
+        completed_keys = [
+            ("A", 1, "A", 1), ("A", 1, "A", 2),
+            ("A", 1, "B", 1), ("A", 1, "B", 2),
+        ]
+        keep = (
+            (frame.essay_file != "first.md") |
+            frame.apply(
+                lambda row: (row.prompt_1, row.response_index_1,
+                             row.prompt_2, row.response_index_2) in completed_keys,
+                axis=1,
+            )
+        )
+        frame = frame[keep]
+        frame.to_csv(self.vectors, index=False)
+
+        class RecordingScorer:
+            def __init__(self):
+                self.prepared = []
+                self.closed = False
+
+            def prepare_embeddings(self, rows):
+                self.prepared.append(rows)
+
+            def __call__(self, first, second):
+                return WorkflowTests.fake_score(first, second)
+
+            def score_pairs(self, pairs):
+                for first, second in pairs:
+                    yield self(first, second)
+
+            def close(self):
+                self.closed = True
+
+        scorer = RecordingScorer()
+        with patch("scoring.OLMSPairScorer", return_value=scorer):
+            generate_vectors(self.responses, self.vectors, resume=True)
+
+        self.assertEqual(len(scorer.prepared), 1)
+        prepared_keys = {
+            (row["essay_file"], row["prompt"], row["response_index"])
+            for row in scorer.prepared[0]
+        }
+        self.assertEqual(prepared_keys, {
+            ("first.md", "A", 2), ("first.md", "B", 1), ("first.md", "B", 2),
+        })
+        self.assertTrue(scorer.closed)
+        OLMSVectorTable(self.vectors)
+
     def test_default_pair_scorer_closes_after_generation_and_errors(self):
         self.collect()
         successful = Mock(side_effect=self.fake_score)
+        successful.score_pairs.side_effect = lambda pairs: [self.fake_score(*pair) for pair in pairs]
         with patch("scoring.OLMSPairScorer", return_value=successful):
             generate_vectors(self.responses, self.vectors)
         successful.close.assert_called_once_with()
 
         failed_vectors = self.root / "failed_vectors.csv"
         failing = Mock(side_effect=RuntimeError("interrupted"))
+        failing.score_pairs.side_effect = RuntimeError("interrupted")
         with patch("scoring.OLMSPairScorer", return_value=failing):
             with self.assertRaisesRegex(RuntimeError, "interrupted"):
                 generate_vectors(self.responses, failed_vectors)
