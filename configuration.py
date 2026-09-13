@@ -24,6 +24,10 @@ seed=42
 # ---------------------
 embeddings_model = "/Volumes/Corpora/LLMs/Qwen3_embedding/Qwen3-Embedding-0.6B-f16.gguf"
 
+# BERTScore uses PyTorch rather than llama.cpp. "auto" selects Apple Metal (MPS)
+# when it is available and otherwise preserves CPU support for other machines.
+bertscore_device = "auto"
+
 # ---------------------
 # LLM Response Config
 # ---------------------
