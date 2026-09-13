@@ -23,7 +23,8 @@ def calculate_vectors(args):
   from vector_generation import generate_vectors
 
   output = generate_vectors(args.responses, args.output, resume=args.resume,
-                            parser_dir=args.parser_dir, diagnostics=args.diagnostics)
+                            parser_dir=args.parser_dir, diagnostics=args.diagnostics,
+                            workers=args.workers)
   print(f"Saved OLMS vectors to {output}")
 
 
@@ -144,6 +145,8 @@ def build_parser():
   vectors.add_argument("--parser-dir", type=Path, default=Path(".models/udpipe"))
   vectors.add_argument("--resume", action="store_true", help="Compute only missing pairs in a compatible checkpoint.")
   vectors.add_argument("--diagnostics", action="store_true", help="Append sentence and structure diagnostics alongside vectors.")
+  vectors.add_argument("--workers", type=positive_integer, default=1,
+                       help="Essay-scoring worker processes (default: 1).")
   vectors.set_defaults(run=calculate_vectors)
 
   analysis = commands.add_parser("analyze", help="Analyze saved vectors without loading language or scoring models.")
