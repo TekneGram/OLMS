@@ -64,6 +64,7 @@ class BertScoreBatchingTests(unittest.TestCase):
       return [{"pair": pair[0]} for pair in pairs]
 
     scorer._score_pair_batch = Mock(side_effect=score_batch)
+    scorer.prepare_bertscore_embeddings = Mock()
     pairs = [(f"pair-{index}", f"other-{index}") for index in range(8)]
     with patch.object(configuration, "bertscore_pair_batch_size", 4), \
          patch("scoring.clear_bertscore_memory") as clear_memory:
@@ -76,6 +77,7 @@ class BertScoreBatchingTests(unittest.TestCase):
   def test_backoff_reraises_non_memory_errors_and_single_pair_oom(self):
     scorer = OLMSPairScorer.__new__(OLMSPairScorer)
     scorer._score_pair_batch = Mock(side_effect=RuntimeError("invalid BERTScore inputs"))
+    scorer.prepare_bertscore_embeddings = Mock()
     with patch.object(configuration, "bertscore_pair_batch_size", 4), \
          patch("scoring.clear_bertscore_memory") as clear_memory:
       with self.assertRaisesRegex(RuntimeError, "invalid BERTScore"):

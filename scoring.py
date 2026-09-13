@@ -38,6 +38,7 @@ class OLMSPairScorer:
     self.diagnostics_dir = Path(diagnostics_dir) if diagnostics_dir is not None else None
     self.cache: dict[tuple[str, int], PreparedResponse] = {}
     self.embedding_cache: dict[ResponseKey, np.ndarray] = {}
+    self.bertscore_context_cache = None
     self.active_essay: str | None = None
 
   @staticmethod
@@ -49,7 +50,18 @@ class OLMSPairScorer:
     if essay_file != self.active_essay:
       self.cache.clear()
       self.embedding_cache.clear()
+      if self.bertscore_context_cache is not None:
+        self.bertscore_context_cache.clear()
       self.active_essay = essay_file
+
+  def _get_bertscore_context_cache(self):
+    """Create the shared BERTScore contextual-token cache only when needed."""
+    if self.bertscore_context_cache is None:
+      from TextProcessing.bertscore_context_cache import BertScoreContextCache
+      from TextProcessing.shared_bert_scorer import get_bert_scorer
+
+      self.bertscore_context_cache = BertScoreContextCache(get_bert_scorer())
+    return self.bertscore_context_cache
 
   def prepare_embeddings(self, responses: Sequence[ResponseRow]) -> None:
     """Encode each unique response needed for the active essay once."""
@@ -74,6 +86,25 @@ class OLMSPairScorer:
       embeddings = self.embedding_model.encode([row["response"] for row in batch])
       for row, embedding in zip(batch, embeddings, strict=True):
         self.embedding_cache[self._response_key(row)] = embedding
+
+  def prepare_bertscore_embeddings(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> None:
+    """Encode every full response and parsed clause needed by an essay once."""
+    if not pairs:
+      return
+    essay_file = pairs[0][0]["essay_file"]
+    if any(first["essay_file"] != essay_file or second["essay_file"] != essay_file
+           for first, second in pairs):
+      raise ValueError("BERTScore contextual preparation requires pairs from one essay.")
+    self._activate_essay(essay_file)
+
+    texts = []
+    for first, second in pairs:
+      (_, clauses_a), (_, clauses_b) = self._prepare(first), self._prepare(second)
+      texts.extend((first["response"], second["response"], *clauses_a, *clauses_b))
+    self._get_bertscore_context_cache().prepare(texts)
 
   def _prepare(
       self,
@@ -100,13 +131,14 @@ class OLMSPairScorer:
       first: ResponseRow,
       second: ResponseRow,
   ) -> VectorScores:
-    return self._score_pair_batch([(first, second)])[0]
+    return next(self.score_pairs([(first, second)]))
 
   def score_pairs(
       self,
       pairs: Sequence[tuple[ResponseRow, ResponseRow]],
   ) -> Iterator[VectorScores]:
     """Score complete response pairs in bounded BERTScore batches."""
+    self.prepare_bertscore_embeddings(pairs)
     batch_size = configuration.bertscore_pair_batch_size
     if not isinstance(batch_size, int) or batch_size < 1:
       raise ValueError("bertscore_pair_batch_size must be a positive integer.")
@@ -146,12 +178,13 @@ class OLMSPairScorer:
     self._activate_essay(essay_file)
 
     prepared = [(self._prepare(first), self._prepare(second)) for first, second in pairs]
+    context_cache = self._get_bertscore_context_cache()
     score_tables = BertScore.create_bert_score_tables([
       (clauses_a, clauses_b) for (_, clauses_a), (_, clauses_b) in prepared
-    ])
+    ], context_cache=context_cache)
     meaning_scores = M.batch_meaning_similarity_bertscores([
       (first["response"], second["response"]) for first, second in pairs
-    ])
+    ], context_cache=context_cache)
     if not (len(score_tables) == len(meaning_scores) == len(pairs)):
       raise ValueError("BERTScore batch did not return every complete response pair.")
 

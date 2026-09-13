@@ -31,8 +31,26 @@ class FakeBertScore:
     return pd.DataFrame([[(0.7, 0.9, 0.8)]])
 
   @staticmethod
-  def create_bert_score_tables(text_pairs):
+  def create_bert_score_tables(text_pairs, context_cache=None):
     return [pd.DataFrame([[(0.7, 0.9, 0.8)]]) for _ in text_pairs]
+
+
+class FakeContextCache:
+  def __init__(self):
+    self.prepared = []
+
+  def prepare(self, texts):
+    self.prepared.append(list(texts))
+
+  def clear(self):
+    pass
+
+  def score(self, candidates, references):
+    return (
+      np.full(len(candidates), 0.7),
+      np.full(len(candidates), 0.9),
+      np.full(len(candidates), 0.8),
+    )
 
 
 class FakeVector:
@@ -89,6 +107,7 @@ class EmbeddingReuseTests(unittest.TestCase):
     self.scorer.diagnostics_dir = None
     self.scorer.cache = {}
     self.scorer.embedding_cache = {}
+    self.scorer.bertscore_context_cache = FakeContextCache()
     self.scorer.active_essay = None
     self.scorer._prepare = Mock(return_value=(object(), ["Sentence."]))
 
@@ -102,6 +121,15 @@ class EmbeddingReuseTests(unittest.TestCase):
     next_essay = [{**row, "essay_file": "next.md"} for row in self.rows]
     self.scorer.prepare_embeddings(next_essay)
     self.assertEqual(self.embedding_model.encode.call_count, 2)
+
+  def test_contextual_cache_prepares_unique_responses_and_clauses_once(self):
+    self.scorer.prepare_bertscore_embeddings([
+      (self.rows[0], self.rows[2]), (self.rows[0], self.rows[3]),
+    ])
+
+    prepared = self.scorer.bertscore_context_cache.prepared
+    self.assertEqual(len(prepared), 1)
+    self.assertEqual(set(prepared[0]), {"A one", "B one", "B two", "Sentence."})
 
   def test_score_pair_uses_cached_embeddings_for_self_and_cross_prompt_pairs(self):
     self.scorer.prepare_embeddings(self.rows)
