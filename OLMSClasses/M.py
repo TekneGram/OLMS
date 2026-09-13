@@ -14,11 +14,15 @@ class M:
       response_1: str,
       response_2: str,
       embedding_model: EmbeddingModel,
+      embedding_1: np.ndarray | None = None,
+      embedding_2: np.ndarray | None = None,
   ) -> None:
     self.response_1 = response_1
     self.response_2 = response_2
     self.scorer = get_bert_scorer()
     self.embedding_model = embedding_model
+    self.embedding_1 = embedding_1
+    self.embedding_2 = embedding_2
 
   def meaning_similarity_bertscore(self) -> dict[str, float]:
     """
@@ -39,8 +43,11 @@ class M:
     if not self.response_1.strip() or not self.response_2.strip():
       raise ValueError("Embedding meaning similarity requires two non-empty responses.")
 
-    embeddings = self.embedding_model.encode([self.response_1, self.response_2])
-    first, second = embeddings
+    if self.embedding_1 is not None and self.embedding_2 is not None:
+      first, second = self.embedding_1, self.embedding_2
+    else:
+      embeddings = self.embedding_model.encode([self.response_1, self.response_2])
+      first, second = embeddings
     denominator = np.linalg.norm(first) * np.linalg.norm(second)
     if denominator == 0:
       raise ValueError("Embedding meaning similarity requires non-zero embedding vectors.")

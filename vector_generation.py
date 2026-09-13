@@ -102,6 +102,7 @@ def generate_vectors(
 
       # Score all AA, BB, and AB response pairs for each essay, skipping checkpointed rows.
       for essay in essays:
+        unfinished_pairs = []
         for p, q in [("A", "A"), ("B", "B"), ("A", "B")]:
           ids = range(1, count + 1)
           pairs = product(ids, ids) if p != q else combinations_with_replacement(ids, 2)
@@ -109,15 +110,26 @@ def generate_vectors(
             key = (essay, p, i, q, j)
             if key in completed:
               continue
-            # Build the real OLMS scorer only when there is work to do.
-            if score_pair is None:
-              # lazy importing
-              from scoring import OLMSPairScorer
-              owned_scorer = OLMSPairScorer(parser_dir, diagnostics_dir)
-              score_pair = owned_scorer
+            unfinished_pairs.append((key, lookup[(essay, p, i)], lookup[(essay, q, j)]))
 
+        if not unfinished_pairs:
+          continue
+
+        # Build and prepare the real scorer only when there is unfinished work.
+        if score_pair is None:
+          from scoring import OLMSPairScorer
+          owned_scorer = OLMSPairScorer(parser_dir, diagnostics_dir)
+          score_pair = owned_scorer
+        if owned_scorer is not None:
+          owned_scorer.prepare_embeddings([
+            response for _, first, second in unfinished_pairs
+            for response in (first, second)
+          ])
+
+        for key, first, second in unfinished_pairs:
             # Compute one OLMS vector and immediately checkpoint it to CSV.
-            vector = score_pair(lookup[(essay, p, i)], lookup[(essay, q, j)])
+            vector = score_pair(first, second)
+            _, p, i, q, j = key
             row = {**dict(zip(OLMSVectorTable.KEYS, key)), "comparison_type": p + q,
                     "response_count": count, **vector}
             OLMSVectorTable.validate_rows(pd.DataFrame([row]))

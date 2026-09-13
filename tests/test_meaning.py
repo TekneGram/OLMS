@@ -47,6 +47,21 @@ class MeaningTests(unittest.TestCase):
         self.assertAlmostEqual(meaning.meaning_similarity_embeddings(), expected)
         model.encode.assert_called_once_with(["First response", "Second response"])
 
+  def test_cached_embeddings_match_uncached_score_without_encoding(self):
+    uncached, uncached_model = self.make_meaning([[1, 0], [0, 1]])
+    uncached_score = uncached.meaning_similarity_embeddings()
+
+    cached_model = FakeEmbeddingModel([[9, 9], [9, 9]])
+    with patch("OLMSClasses.M.get_bert_scorer", return_value=FakeBertScorer()):
+      cached = M(
+        "First response", "Second response", cached_model,
+        embedding_1=np.array([1, 0]), embedding_2=np.array([0, 1]),
+      )
+
+    self.assertAlmostEqual(cached.meaning_similarity_embeddings(), uncached_score)
+    uncached_model.encode.assert_called_once_with(["First response", "Second response"])
+    cached_model.encode.assert_not_called()
+
   def test_total_meaning_score_averages_bertscore_f1_and_embedding_score(self):
     meaning, _ = self.make_meaning([[1, 0], [0, 1]], f1=0.8)
     self.assertAlmostEqual(meaning.get_similarity_score(), 0.65)
