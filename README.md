@@ -1,9 +1,75 @@
 # OLMS
-Evaluate prompt outputs on small language models for variation.
-O = Organization similarity
-L = Lexical similarity
-M = Meaning / Semantic similarity
-S = Structural similarity
+
+## OLMS
+
+OLMS evaluates how similar two small-language-model responses are along four
+complementary dimensions. An OLMS vector is
+`<O, L, M, S>`, where every component is a similarity score: higher values mean
+the two responses are more alike on that dimension. The calibration set shows
+why the dimensions are kept separate: responses can preserve wording, meaning,
+and syntactic style while presenting their ideas in a different order.
+
+- **O — organization similarity.** Each response is parsed and divided into
+  sentences. BERTScore F1 is calculated for every sentence pair, forming a
+  similarity matrix. For each sentence in one response, a low-temperature soft
+  alignment weights its likely counterparts in the other response; the weighted
+  normalized position is compared with its own normalized position. The score
+  is confidence-weighted and averaged in both directions. O therefore measures
+  preservation of presentation order, not argument quality or coherence in
+  isolation.
+- **L — lexical and phraseological similarity.** L combines TF-IDF cosine
+  similarity with similarity in lexical diversity (MATTR by default, using a
+  25-word window) and sentence-bounded phraseology. Phraseology is the mean
+  similarity of smoothed Jensen–Shannon 2-gram and 3-gram distributions. The
+  lexical-diversity/TF-IDF portion has 80% weight and phraseology 20%, so L is
+  sensitive to vocabulary choice, repeated expressions, and phrasing rather
+  than to topic alone.
+- **M — meaning similarity.** M averages whole-response BERTScore F1 and the
+  cosine similarity of Qwen response embeddings after transforming cosine from
+  `[-1, 1]` to `[0, 1]`. It estimates similarity of expressed content; it does
+  not judge factual accuracy, writing quality, or comprehensibility on its own.
+- **S — syntactic-structure similarity.** UDPipe dependency parses yield
+  profiles of subordinate-clause types, modifier and predicate relations,
+  dependency depth, dependency distance, and long dependencies. The system
+  compares both normalized rates (for example, per sentence, noun, or verb) and
+  raw totals feature by feature, then averages those two similarities. S is
+  intended to capture similarity in syntactic complexity and register, so it
+  can remain high after sentence reordering but fall when prose is simplified.
+
+## Analysis
+
+This repository implements the OLMSVector Stability Pilot Study described in
+[research.md](research.md). It collects repeated feedback responses for the
+same essays under two prompts—standard rubric-based feedback (A) and a
+simplified-language version for a CEFR B1 learner (B)—then compares response
+pairs with OLMS vectors. The analysis estimates within-essay, same-prompt
+stability; assesses whether that stability differs across essays; and estimates
+how much Prompt B shifts output beyond ordinary sampling variation. It uses
+centroids, Euclidean vector distances, component summaries, and response-level
+bootstrap confidence intervals. A future, separate analysis would test whether
+the vector also distinguishes feedback for different essays.
+
+## Configuration
+
+Set experiment inputs and runtime choices in [configuration.py](configuration.py).
+The most consequential settings are:
+
+- `llm_path` selects the generation model, while `embeddings_model` selects the
+  Qwen GGUF model used by M; changing either changes results and requires a new
+  experiment output.
+- `max_tokens`, `temperature`, and `top_p` control response length and sampling
+  variation. `seed` makes each essay/prompt/repetition sampling identity
+  reproducible; the prompt text and essay directory (`essays_path`) define the
+  experiment inputs.
+- `n_ctx`, `n_threads`, and `n_gpu_layers` control llama.cpp context capacity,
+  CPU parallelism, and GPU offload. They affect speed and hardware fit, and a
+  too-small context can truncate the effective input.
+- `bertscore_device` selects BERTScore execution (`auto` uses Apple Metal when
+  available, otherwise CPU). `bertscore_pair_batch_size = 20` is the number of
+  complete response pairs submitted together to BERTScore. Raising it can
+  improve throughput but increases memory demand; lowering it is useful on
+  constrained hardware. The scorer preserves each pair's full sentence matrix
+  and automatically retries out-of-memory batches in smaller groups.
 
 ## Workflow
 
