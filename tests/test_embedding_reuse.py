@@ -30,11 +30,15 @@ class FakeBertScore:
   def create_bert_score_table(self):
     return pd.DataFrame([[(0.7, 0.9, 0.8)]])
 
+  @staticmethod
+  def create_bert_score_tables(text_pairs):
+    return [pd.DataFrame([[(0.7, 0.9, 0.8)]]) for _ in text_pairs]
+
 
 class FakeVector:
   instances = []
 
-  def __init__(self, *args, embedding_a=None, embedding_b=None):
+  def __init__(self, *args, embedding_a=None, embedding_b=None, meaning_bertscore=None):
     self.embedding_a = embedding_a
     self.embedding_b = embedding_b
     self.structure = Mock()
@@ -103,7 +107,8 @@ class EmbeddingReuseTests(unittest.TestCase):
     self.scorer.prepare_embeddings(self.rows)
     FakeVector.instances.clear()
     with patch("TextProcessing.bertscorer.BertScore", FakeBertScore), \
-         patch("OLMSClasses.OLMS_vector.OLMSVector", FakeVector):
+         patch("OLMSClasses.OLMS_vector.OLMSVector", FakeVector), \
+         patch("OLMSClasses.M.M.batch_meaning_similarity_bertscores", return_value=[{}]):
       self.scorer.score_pair(self.rows[0], self.rows[0])
       self.scorer.score_pair(self.rows[1], self.rows[3])
       self.scorer.score_pair(self.rows[2], self.rows[3])

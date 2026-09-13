@@ -62,6 +62,10 @@ class FakeScorer:
       time.sleep(0.02)
     return {"org": 0.8, "lex": 0.7, "meaning": 0.9, "struct": 0.6}
 
+  def score_pairs(self, pairs):
+    for first, second in pairs:
+      yield self(first, second)
+
   def close(self):
     pass
 

@@ -18,7 +18,11 @@ class FakeBertScorer:
     self.f1 = f1
 
   def score(self, candidates, references):
-    return (np.array([0.7]), np.array([0.9]), np.array([self.f1]))
+    return (
+      np.full(len(candidates), 0.7),
+      np.full(len(candidates), 0.9),
+      np.full(len(candidates), self.f1),
+    )
 
 
 class MeaningTests(unittest.TestCase):
@@ -35,6 +39,15 @@ class MeaningTests(unittest.TestCase):
       meaning.meaning_similarity_bertscore(),
       {"precision": 0.7, "recall": 0.9, "f1": 0.8})
     self.assertFalse(hasattr(meaning, "meaning_similarity"))
+
+  def test_document_bertscores_batch_complete_response_pairs(self):
+    scorer = FakeBertScorer()
+    scores = M.batch_meaning_similarity_bertscores(
+      [("First response", "Second response"), ("Third response", "Fourth response")], scorer)
+    self.assertEqual(scores, [
+      {"precision": 0.7, "recall": 0.9, "f1": 0.8},
+      {"precision": 0.7, "recall": 0.9, "f1": 0.8},
+    ])
 
   def test_embedding_similarity_uses_cosine_and_affine_transform(self):
     for vectors, expected in [

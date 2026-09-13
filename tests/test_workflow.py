@@ -145,6 +145,10 @@ class WorkflowTests(unittest.TestCase):
             def __call__(self, first, second):
                 return WorkflowTests.fake_score(first, second)
 
+            def score_pairs(self, pairs):
+                for first, second in pairs:
+                    yield self(first, second)
+
             def close(self):
                 self.closed = True
 
@@ -166,12 +170,14 @@ class WorkflowTests(unittest.TestCase):
     def test_default_pair_scorer_closes_after_generation_and_errors(self):
         self.collect()
         successful = Mock(side_effect=self.fake_score)
+        successful.score_pairs.side_effect = lambda pairs: [self.fake_score(*pair) for pair in pairs]
         with patch("scoring.OLMSPairScorer", return_value=successful):
             generate_vectors(self.responses, self.vectors)
         successful.close.assert_called_once_with()
 
         failed_vectors = self.root / "failed_vectors.csv"
         failing = Mock(side_effect=RuntimeError("interrupted"))
+        failing.score_pairs.side_effect = RuntimeError("interrupted")
         with patch("scoring.OLMSPairScorer", return_value=failing):
             with self.assertRaisesRegex(RuntimeError, "interrupted"):
                 generate_vectors(self.responses, failed_vectors)

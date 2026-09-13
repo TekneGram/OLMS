@@ -1,9 +1,10 @@
 from pathlib import Path
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import numpy as np
 
+import configuration
 from SLM.embedding import EmbeddingModel
 from TextProcessing.deprel import DependencyParse
 
@@ -93,27 +94,62 @@ class OLMSPairScorer:
       first: ResponseRow,
       second: ResponseRow,
   ) -> VectorScores:
+    return self._score_pair_batch([(first, second)])[0]
+
+  def score_pairs(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> Iterator[VectorScores]:
+    """Score complete response pairs in bounded BERTScore batches."""
+    batch_size = configuration.bertscore_pair_batch_size
+    if not isinstance(batch_size, int) or batch_size < 1:
+      raise ValueError("bertscore_pair_batch_size must be a positive integer.")
+    for start in range(0, len(pairs), batch_size):
+      yield from self._score_pair_batch(pairs[start:start + batch_size])
+
+  def _score_pair_batch(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> list[VectorScores]:
+    """Score one batch of intact response pairs without carrying partial matrices."""
+    from OLMSClasses.M import M
     from OLMSClasses.OLMS_vector import OLMSVector
     from TextProcessing.bertscorer import BertScore
 
-    self._activate_essay(first["essay_file"])
+    if not pairs:
+      return []
+    essay_file = pairs[0][0]["essay_file"]
+    if any(first["essay_file"] != essay_file or second["essay_file"] != essay_file
+           for first, second in pairs):
+      raise ValueError("BERTScore pair batches must contain one essay.")
+    self._activate_essay(essay_file)
 
-    parsed_a, clauses_a = self._prepare(first)
-    parsed_b, clauses_b = self._prepare(second)
-    score_table = BertScore(clauses_a, clauses_b).create_bert_score_table()
-    vector = OLMSVector(
-      score_table, parsed_a, parsed_b, first["response"], second["response"], self.embedding_model,
-      embedding_a=self.embedding_cache.get(self._response_key(first)),
-      embedding_b=self.embedding_cache.get(self._response_key(second)),
-    )
-    result = vector.create_olms_vector()
+    prepared = [(self._prepare(first), self._prepare(second)) for first, second in pairs]
+    score_tables = BertScore.create_bert_score_tables([
+      (clauses_a, clauses_b) for (_, clauses_a), (_, clauses_b) in prepared
+    ])
+    meaning_scores = M.batch_meaning_similarity_bertscores([
+      (first["response"], second["response"]) for first, second in pairs
+    ])
+    if not (len(score_tables) == len(meaning_scores) == len(pairs)):
+      raise ValueError("BERTScore batch did not return every complete response pair.")
 
-    if self.diagnostics_dir is not None:
-      label = (f"{self.active_essay}: {first['prompt']}{first['response_index']} / "
-               f"{second['prompt']}{second['response_index']}")
-      vector.structure.append_structure_to_markdown(self.diagnostics_dir / "structure.md", label)
+    results = []
+    for (first, second), ((parsed_a, _), (parsed_b, _)), score_table, meaning_score in zip(
+        pairs, prepared, score_tables, meaning_scores, strict=True):
+      vector = OLMSVector(
+        score_table, parsed_a, parsed_b, first["response"], second["response"], self.embedding_model,
+        embedding_a=self.embedding_cache.get(self._response_key(first)),
+        embedding_b=self.embedding_cache.get(self._response_key(second)),
+        meaning_bertscore=meaning_score,
+      )
+      results.append(vector.create_olms_vector())
 
-    return result
+      if self.diagnostics_dir is not None:
+        label = (f"{self.active_essay}: {first['prompt']}{first['response_index']} / "
+                 f"{second['prompt']}{second['response_index']}")
+        vector.structure.append_structure_to_markdown(self.diagnostics_dir / "structure.md", label)
+    return results
 
   def __call__(
       self,

@@ -39,8 +39,9 @@ def _parallel_score_worker(
       scorer.prepare_embeddings([
         response for _, first, second in pairs for response in (first, second)
       ])
-      for key, first, second in pairs:
-        result_queue.put(("row", key, scorer(first, second)))
+      scores = scorer.score_pairs([(first, second) for _, first, second in pairs])
+      for (key, _, _), score in zip(pairs, scores, strict=True):
+        result_queue.put(("row", key, score))
       result_queue.put(("complete", active_essay))
       active_essay = None
   except BaseException:
@@ -204,6 +205,8 @@ def generate_vectors(
               "algorithm_sha256": {str(p.relative_to(root)): file_digest(p) for p in algorithm_files},
               "parser_dir": str(Path(parser_dir).resolve()), "diagnostics": diagnostics,
               "embeddings_model": configuration.embeddings_model,
+              "bertscore_device": configuration.bertscore_device,
+              "bertscore_pair_batch_size": configuration.bertscore_pair_batch_size,
               "response_metadata": response_metadata, "complete": False}
 
   completed = set()
@@ -273,10 +276,15 @@ def generate_vectors(
               response for _, first, second in unfinished_pairs
               for response in (first, second)
             ])
-
-          for key, first, second in unfinished_pairs:
-            _append_vector_row(
-              handle, writer, key, score_pair(first, second), count, completed, total)
+            scores = owned_scorer.score_pairs([
+              (first, second) for _, first, second in unfinished_pairs
+            ])
+            for (key, _, _), score in zip(unfinished_pairs, scores, strict=True):
+              _append_vector_row(handle, writer, key, score, count, completed, total)
+          else:
+            for key, first, second in unfinished_pairs:
+              _append_vector_row(
+                handle, writer, key, score_pair(first, second), count, completed, total)
 
     # Revalidate the finished table before marking vector metadata complete.
     OLMSVectorTable(output)
