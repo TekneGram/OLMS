@@ -29,7 +29,7 @@ embeddings_model = "/Volumes/Corpora/LLMs/Qwen3_embedding/Qwen3-Embedding-0.6B-f
 bertscore_device = "auto"
 # Complete response pairs to submit together to BERTScore. A pair's sentence
 # matrix is never split across batches.
-bertscore_pair_batch_size = 4
+bertscore_pair_batch_size = 2
 
 # ---------------------
 # LLM Response Config

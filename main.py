@@ -184,6 +184,7 @@ if __name__ == "__main__":
 # Change the path to the model in the configuration file.
 # python3 main.py responses --output data/pilot_responses.csv
 # python3 main.py vectors --responses data/pilot_responses.csv --output data/pilot_vectors.csv
+# python3 main.py vectors --responses data/pilot_qwen3.5_9b_q4km_responses.csv --output data/pilot_qwen3.5_9b_q4km_vectors_2workers.csv --workers 2
 # python3 main.py analyze --vectors data/pilot_vectors.csv --output data/pilot_analysis
 # python3 main.py charts --analysis data/pilot_analysis
 

@@ -1,10 +1,12 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pandas as pd
 
 from TextProcessing.bertscorer import BertScore
+from scoring import OLMSPairScorer
+import configuration
 
 
 class DeterministicBertScorer:
@@ -50,6 +52,40 @@ class BertScoreBatchingTests(unittest.TestCase):
   def test_rejects_a_result_that_cannot_fill_every_complete_matrix(self):
     with self.assertRaisesRegex(ValueError, "unexpected number"):
       BertScore.create_bert_score_tables([(["A"], ["B", "C"])], ShortBertScorer())
+
+  def test_oom_backoff_halves_one_group_then_restores_the_configured_size(self):
+    scorer = OLMSPairScorer.__new__(OLMSPairScorer)
+    calls = []
+
+    def score_batch(pairs):
+      calls.append(len(pairs))
+      if len(calls) == 1:
+        raise RuntimeError("MPS backend out of memory")
+      return [{"pair": pair[0]} for pair in pairs]
+
+    scorer._score_pair_batch = Mock(side_effect=score_batch)
+    pairs = [(f"pair-{index}", f"other-{index}") for index in range(8)]
+    with patch.object(configuration, "bertscore_pair_batch_size", 4), \
+         patch("scoring.clear_bertscore_memory") as clear_memory:
+      result = list(scorer.score_pairs(pairs))
+
+    self.assertEqual(calls, [4, 2, 2, 4])
+    self.assertEqual(result, [{"pair": f"pair-{index}"} for index in range(8)])
+    clear_memory.assert_called_once_with()
+
+  def test_backoff_reraises_non_memory_errors_and_single_pair_oom(self):
+    scorer = OLMSPairScorer.__new__(OLMSPairScorer)
+    scorer._score_pair_batch = Mock(side_effect=RuntimeError("invalid BERTScore inputs"))
+    with patch.object(configuration, "bertscore_pair_batch_size", 4), \
+         patch("scoring.clear_bertscore_memory") as clear_memory:
+      with self.assertRaisesRegex(RuntimeError, "invalid BERTScore"):
+        list(scorer.score_pairs([("first", "second")]))
+      clear_memory.assert_not_called()
+
+    scorer._score_pair_batch = Mock(side_effect=RuntimeError("out of memory"))
+    with patch.object(configuration, "bertscore_pair_batch_size", 4):
+      with self.assertRaisesRegex(RuntimeError, "out of memory"):
+        list(scorer.score_pairs([("first", "second")]))
 
 
 if __name__ == "__main__":

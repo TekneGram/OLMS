@@ -28,6 +28,12 @@ def resolve_bertscore_device() -> str:
   raise ValueError("bertscore_device must be 'auto', 'cpu', or 'mps'.")
 
 
+def clear_bertscore_memory() -> None:
+  """Release unused MPS allocations before retrying an out-of-memory BERTScore batch."""
+  if _mps_is_available():
+    torch.mps.empty_cache()
+
+
 @lru_cache(maxsize=1)
 def get_bert_scorer() -> BERTScorer:
   return BERTScorer(

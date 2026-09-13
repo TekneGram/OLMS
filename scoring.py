@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 
 import configuration
+from TextProcessing.shared_bert_scorer import clear_bertscore_memory
 from SLM.embedding import EmbeddingModel
 from TextProcessing.deprel import DependencyParse
 
@@ -13,6 +14,11 @@ ResponseRow = dict[str, Any]
 PreparedResponse = tuple[DependencyParse, list[str]]
 VectorScores = dict[str, float]
 ResponseKey = tuple[str, str, int]
+
+
+def _is_out_of_memory(error: RuntimeError) -> bool:
+  message = str(error).lower()
+  return "out of memory" in message or "not enough memory" in message
 
 
 class OLMSPairScorer:
@@ -105,7 +111,22 @@ class OLMSPairScorer:
     if not isinstance(batch_size, int) or batch_size < 1:
       raise ValueError("bertscore_pair_batch_size must be a positive integer.")
     for start in range(0, len(pairs), batch_size):
-      yield from self._score_pair_batch(pairs[start:start + batch_size])
+      yield from self._score_pair_batch_with_backoff(pairs[start:start + batch_size])
+
+  def _score_pair_batch_with_backoff(
+      self,
+      pairs: Sequence[tuple[ResponseRow, ResponseRow]],
+  ) -> Iterator[VectorScores]:
+    """Retry an OOM batch as smaller, still-complete response-pair groups."""
+    try:
+      yield from self._score_pair_batch(pairs)
+    except RuntimeError as error:
+      if not _is_out_of_memory(error) or len(pairs) == 1:
+        raise
+      clear_bertscore_memory()
+      retry_size = max(1, len(pairs) // 2)
+      for start in range(0, len(pairs), retry_size):
+        yield from self._score_pair_batch_with_backoff(pairs[start:start + retry_size])
 
   def _score_pair_batch(
       self,
