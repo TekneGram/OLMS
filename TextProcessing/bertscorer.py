@@ -20,12 +20,14 @@ class BertScore:
   def create_bert_score_tables(
       text_pairs: Sequence[tuple[list[str], list[str]]],
       scorer=None,
+      context_cache=None,
   ) -> list[pd.DataFrame]:
     """Score complete sentence matrices together and reconstruct each intact table."""
     if not text_pairs:
       return []
 
-    scorer = get_bert_scorer() if scorer is None else scorer
+    if scorer is None and context_cache is None:
+      scorer = get_bert_scorer()
     candidates, references = [], []
     boundaries = []
     for text_a, text_b in text_pairs:
@@ -36,7 +38,8 @@ class BertScore:
       references.extend(text_b_i for _ in text_a for text_b_i in text_b)
       boundaries.append((start, len(text_a) * len(text_b), text_a, text_b))
 
-    precision, recall, f1 = scorer.score(candidates, references)
+    score_source = context_cache if context_cache is not None else scorer
+    precision, recall, f1 = score_source.score(candidates, references)
     if not (len(precision) == len(recall) == len(f1) == len(candidates)):
       raise ValueError("BERTScore returned an unexpected number of sentence scores.")
 

@@ -31,6 +31,7 @@ class M:
   def batch_meaning_similarity_bertscores(
       response_pairs: Sequence[tuple[str, str]],
       scorer=None,
+      context_cache=None,
   ) -> list[dict[str, float]]:
     """Return one document-level BERTScore result for each complete response pair."""
     if not response_pairs:
@@ -38,8 +39,10 @@ class M:
     if any(not first.strip() or not second.strip() for first, second in response_pairs):
       raise ValueError("BERTScore meaning similarity requires two non-empty responses.")
 
-    scorer = get_bert_scorer() if scorer is None else scorer
-    precision, recall, f1 = scorer.score(
+    if scorer is None and context_cache is None:
+      scorer = get_bert_scorer()
+    score_source = context_cache if context_cache is not None else scorer
+    precision, recall, f1 = score_source.score(
       [first for first, _ in response_pairs],
       [second for _, second in response_pairs],
     )
