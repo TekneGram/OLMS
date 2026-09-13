@@ -48,10 +48,13 @@ class OLMSPairScorer:
   def _activate_essay(self, essay_file: str) -> None:
     """Clear per-essay caches when scoring advances to another essay."""
     if essay_file != self.active_essay:
+      was_active = self.active_essay is not None
       self.cache.clear()
       self.embedding_cache.clear()
       if self.bertscore_context_cache is not None:
         self.bertscore_context_cache.clear()
+      if was_active:
+        clear_bertscore_memory()
       self.active_essay = essay_file
 
   def _get_bertscore_context_cache(self):

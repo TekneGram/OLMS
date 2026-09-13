@@ -38,6 +38,22 @@ class BertScoreDeviceTests(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, "must be"):
       shared_bert_scorer.resolve_bertscore_device()
 
+  @patch("TextProcessing.shared_bert_scorer.gc.collect")
+  @patch("TextProcessing.shared_bert_scorer.torch.mps.empty_cache")
+  @patch("TextProcessing.shared_bert_scorer._mps_is_available", return_value=True)
+  def test_memory_release_collects_and_empties_mps_cache(self, available, empty_cache, collect):
+    shared_bert_scorer.clear_bertscore_memory()
+    collect.assert_called_once_with()
+    empty_cache.assert_called_once_with()
+
+  @patch("TextProcessing.shared_bert_scorer.gc.collect")
+  @patch("TextProcessing.shared_bert_scorer.torch.mps.empty_cache")
+  @patch("TextProcessing.shared_bert_scorer._mps_is_available", return_value=False)
+  def test_memory_release_skips_mps_on_cpu(self, available, empty_cache, collect):
+    shared_bert_scorer.clear_bertscore_memory()
+    collect.assert_called_once_with()
+    empty_cache.assert_not_called()
+
 
 if __name__ == "__main__":
   unittest.main()

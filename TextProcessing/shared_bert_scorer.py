@@ -1,3 +1,4 @@
+import gc
 from functools import lru_cache
 
 from bert_score import BERTScorer
@@ -29,7 +30,8 @@ def resolve_bertscore_device() -> str:
 
 
 def clear_bertscore_memory() -> None:
-  """Release unused MPS allocations before retrying an out-of-memory BERTScore batch."""
+  """Release unreachable tensors and unused MPS allocations."""
+  gc.collect()
   if _mps_is_available():
     torch.mps.empty_cache()
 

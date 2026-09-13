@@ -38,12 +38,10 @@ class FakeBertScore:
 class FakeContextCache:
   def __init__(self):
     self.prepared = []
+    self.clear = Mock()
 
   def prepare(self, texts):
     self.prepared.append(list(texts))
-
-  def clear(self):
-    pass
 
   def score(self, candidates, references):
     return (
@@ -130,6 +128,20 @@ class EmbeddingReuseTests(unittest.TestCase):
     prepared = self.scorer.bertscore_context_cache.prepared
     self.assertEqual(len(prepared), 1)
     self.assertEqual(set(prepared[0]), {"A one", "B one", "B two", "Sentence."})
+
+  def test_essay_transition_clears_caches_and_releases_mps_memory_once(self):
+    self.scorer.active_essay = "essay.md"
+    self.scorer.cache["old"] = (object(), ["Old sentence."])
+    self.scorer.embedding_cache[("essay.md", "A", 1)] = np.array([1.0])
+
+    with patch("scoring.clear_bertscore_memory") as release_memory:
+      self.scorer._activate_essay("next.md")
+      self.scorer._activate_essay("next.md")
+
+    self.assertEqual(self.scorer.cache, {})
+    self.assertEqual(self.scorer.embedding_cache, {})
+    self.scorer.bertscore_context_cache.clear.assert_called_once_with()
+    release_memory.assert_called_once_with()
 
   def test_score_pair_uses_cached_embeddings_for_self_and_cross_prompt_pairs(self):
     self.scorer.prepare_embeddings(self.rows)
