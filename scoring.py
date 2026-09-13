@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+from SLM.embedding import EmbeddingModel
 from TextProcessing.deprel import DependencyParse
 
 
@@ -20,6 +21,7 @@ class OLMSPairScorer:
     from TextProcessing.deprel import DependencyParser
 
     self.parser = DependencyParser(parser_dir)
+    self.embedding_model = EmbeddingModel()
     self.diagnostics_dir = Path(diagnostics_dir) if diagnostics_dir is not None else None
     self.cache: dict[tuple[str, int], PreparedResponse] = {}
     self.active_essay: str | None = None
@@ -59,7 +61,8 @@ class OLMSPairScorer:
     parsed_a, clauses_a = self._prepare(first)
     parsed_b, clauses_b = self._prepare(second)
     score_table = BertScore(clauses_a, clauses_b).create_bert_score_table()
-    vector = OLMSVector(score_table, parsed_a, parsed_b, first["response"], second["response"])
+    vector = OLMSVector(
+      score_table, parsed_a, parsed_b, first["response"], second["response"], self.embedding_model)
     result = vector.create_olms_vector()
 
     if self.diagnostics_dir is not None:
@@ -75,3 +78,6 @@ class OLMSPairScorer:
       second: ResponseRow,
   ) -> VectorScores:
     return self.score_pair(first, second)
+
+  def close(self) -> None:
+    self.embedding_model.close()

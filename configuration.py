@@ -20,6 +20,11 @@ verbose=False
 seed=42
 
 # ---------------------
+# Embedding model path
+# ---------------------
+embeddings_model = "/Volumes/Corpora/LLMs/Qwen3_embedding/Qwen3-Embedding-0.6B-f16.gguf"
+
+# ---------------------
 # LLM Response Config
 # ---------------------
 max_tokens=512

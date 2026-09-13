@@ -12,6 +12,7 @@ VectorScores = dict[str, float]
 
 import pandas as pd
 
+import configuration
 from analysis.olms_vector_table import OLMSVectorTable
 from experiment_data import append_csv_row, file_digest, metadata_path, read_responses, write_metadata
 
@@ -51,6 +52,7 @@ def generate_vectors(
   root = Path(__file__).resolve().parent
   algorithm_files = [Path(__file__), root / "scoring.py",
                       *sorted((root / "OLMSClasses").glob("*.py")),
+                      root / "SLM" / "embedding.py",
                       *sorted((root / "TextProcessing").glob("*.py"))]
 
   # Fingerprint inputs, scorer code, and settings so resume cannot mix experiments.
@@ -58,6 +60,7 @@ def generate_vectors(
               "response_file": str(source.resolve()), "essay_files": essays, "response_count": count,
               "algorithm_sha256": {str(p.relative_to(root)): file_digest(p) for p in algorithm_files},
               "parser_dir": str(Path(parser_dir).resolve()), "diagnostics": diagnostics,
+              "embeddings_model": configuration.embeddings_model,
               "response_metadata": response_metadata, "complete": False}
 
   completed = set()
@@ -89,38 +92,44 @@ def generate_vectors(
   fresh = not output.exists()
   total = len(essays) * (count * (count + 1) + count * count)
 
-  with output.open("x" if fresh else "a", encoding="utf-8", newline="") as handle:
-    writer = csv.DictWriter(handle, fieldnames=OLMSVectorTable.COLUMNS)
-    if fresh:
-      writer.writeheader()
-      handle.flush()
+  owned_scorer = None
+  try:
+    with output.open("x" if fresh else "a", encoding="utf-8", newline="") as handle:
+      writer = csv.DictWriter(handle, fieldnames=OLMSVectorTable.COLUMNS)
+      if fresh:
+        writer.writeheader()
+        handle.flush()
 
-    # Score all AA, BB, and AB response pairs for each essay, skipping checkpointed rows.
-    for essay in essays:
-      for p, q in [("A", "A"), ("B", "B"), ("A", "B")]:
-        ids = range(1, count + 1)
-        pairs = product(ids, ids) if p != q else combinations_with_replacement(ids, 2)
-        for i, j in pairs:
-          key = (essay, p, i, q, j)
-          if key in completed:
-            continue
-          # Build the real OLMS scorer only when there is work to do.
-          if score_pair is None:
-            # lazy importing
-            from scoring import OLMSPairScorer
-            score_pair = OLMSPairScorer(parser_dir, diagnostics_dir)
+      # Score all AA, BB, and AB response pairs for each essay, skipping checkpointed rows.
+      for essay in essays:
+        for p, q in [("A", "A"), ("B", "B"), ("A", "B")]:
+          ids = range(1, count + 1)
+          pairs = product(ids, ids) if p != q else combinations_with_replacement(ids, 2)
+          for i, j in pairs:
+            key = (essay, p, i, q, j)
+            if key in completed:
+              continue
+            # Build the real OLMS scorer only when there is work to do.
+            if score_pair is None:
+              # lazy importing
+              from scoring import OLMSPairScorer
+              owned_scorer = OLMSPairScorer(parser_dir, diagnostics_dir)
+              score_pair = owned_scorer
 
-          # Compute one OLMS vector and immediately checkpoint it to CSV.
-          vector = score_pair(lookup[(essay, p, i)], lookup[(essay, q, j)])
-          row = {**dict(zip(OLMSVectorTable.KEYS, key)), "comparison_type": p + q,
-                  "response_count": count, **vector}
-          OLMSVectorTable.validate_rows(pd.DataFrame([row]))
-          append_csv_row(handle, writer, row)
-          completed.add(key)
-          print(f"Saved vector {len(completed)}/{total}: {essay} {p}{i}/{q}{j}", flush=True)
+            # Compute one OLMS vector and immediately checkpoint it to CSV.
+            vector = score_pair(lookup[(essay, p, i)], lookup[(essay, q, j)])
+            row = {**dict(zip(OLMSVectorTable.KEYS, key)), "comparison_type": p + q,
+                    "response_count": count, **vector}
+            OLMSVectorTable.validate_rows(pd.DataFrame([row]))
+            append_csv_row(handle, writer, row)
+            completed.add(key)
+            print(f"Saved vector {len(completed)}/{total}: {essay} {p}{i}/{q}{j}", flush=True)
 
-  # Revalidate the finished table before marking vector metadata complete.
-  OLMSVectorTable(output)
-  metadata["complete"] = True
-  write_metadata(metadata_path(output), metadata)
-  return output
+    # Revalidate the finished table before marking vector metadata complete.
+    OLMSVectorTable(output)
+    metadata["complete"] = True
+    write_metadata(metadata_path(output), metadata)
+    return output
+  finally:
+    if owned_scorer is not None:
+      owned_scorer.close()

@@ -60,8 +60,10 @@ After response collection finishes:
 python main.py vectors --responses data/pilot_responses.csv --output data/pilot_vectors.csv
 ```
 
-This stage reads saved responses and loads UDPipe and BERTScore, without making
-generation-model calls. Responses are parsed once per essay during the run.
+This stage reads saved responses and loads UDPipe, BERTScore, and the configured
+Qwen GGUF embedding model, without making generation-model calls. The embedding
+model is loaded once for the run and released after all response pairs have been
+processed. Responses are parsed once per essay during the run.
 For K responses per prompt, each essay has:
 
 | Comparison | Study pairs | At K = 10 |
@@ -78,7 +80,8 @@ They are excluded from the original study summaries.
 
 Vector columns: `essay_file`, `prompt_1`, `response_index_1`, `prompt_2`,
 `response_index_2`, `comparison_type`, `response_count`, `org`, `lex`, `meaning`,
-and `struct`. AA/BB indices are ordered with the first no greater than the second;
+and `struct`. `meaning` is the average of BERTScore F1 and a Qwen embedding cosine
+similarity transformed from `[-1, 1]` to `[0, 1]`. AA/BB indices are ordered with the first no greater than the second;
 equal indices identify bootstrap support rows. AB always places A first.
 
 Pairs are saved immediately. Add `--resume` to the same command after an
